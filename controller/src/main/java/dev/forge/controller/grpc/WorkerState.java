@@ -37,6 +37,36 @@ public class WorkerState {
         this.online = true;
     }
 
+    public synchronized boolean sendCommand(
+        ControllerMessage message) {
+
+        if (!online || commandStream == null) {
+            return false;
+        }
+
+        try {
+            commandStream.onNext(message);
+            return true;
+        }
+        catch (RuntimeException exception) {
+
+            System.err.println(
+                    "Failed to send command to "
+                            + workerId
+                            + ": "
+                            + exception.getMessage()
+            );
+
+            commandStream = null;
+
+            return false;
+        }
+    }
+
+    public boolean hasCommandStream() {
+        return commandStream != null;
+    }
+
     public String getWorkerId() {
         return workerId;
     }

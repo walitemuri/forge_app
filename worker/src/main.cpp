@@ -10,7 +10,15 @@
 #include <string>
 #include <thread>
 
+#ifdef __APPLE__
+#include <mach/mach.h>
+#include <mach/mach_host.h>
+#include <sys/sysctl.h>
+#else
 #include <sys/sysinfo.h>
+#endif
+
+#include <unistd.h>
 #include <unistd.h>
 
 #include "forge.grpc.pb.h"
@@ -34,17 +42,79 @@ std::string getHostname() {
 
 
 uint64_t getTotalMemoryBytes() {
-    struct sysinfo info{};
 
-    if (sysinfo(&info) == 0) {
-        return static_cast<uint64_t>(info.totalram) * info.mem_unit;
+#ifdef __APPLE__
+
+    uint64_t memory = 0;
+    size_t length = sizeof(memory);
+
+    if (sysctlbyname(
+            "hw.memsize",
+            &memory,
+            &length,
+            nullptr,
+            0) == 0) {
+
+        return memory;
     }
 
     return 0;
+
+#else
+
+    struct sysinfo info{};
+
+    if (sysinfo(&info) == 0) {
+        return static_cast<uint64_t>(info.totalram)
+            * info.mem_unit;
+    }
+
+    return 0;
+
+#endif
 }
 
 
 uint64_t getMemoryUsedBytes() {
+
+#ifdef __APPLE__
+
+    mach_msg_type_number_t count =
+        HOST_VM_INFO64_COUNT;
+
+    vm_statistics64_data_t vmStats{};
+
+    mach_port_t host =
+        mach_host_self();
+
+    kern_return_t result =
+        host_statistics64(
+            host,
+            HOST_VM_INFO64,
+            reinterpret_cast<host_info64_t>(&vmStats),
+            &count
+        );
+
+    if (result != KERN_SUCCESS) {
+        return 0;
+    }
+
+    uint64_t pageSize = 0;
+
+    host_page_size(
+        host,
+        reinterpret_cast<vm_size_t*>(&pageSize)
+    );
+
+    uint64_t usedPages =
+        vmStats.active_count
+        + vmStats.wire_count
+        + vmStats.compressor_page_count;
+
+    return usedPages * pageSize;
+
+#else
+
     std::ifstream file("/proc/meminfo");
 
     std::string line;
@@ -53,6 +123,7 @@ uint64_t getMemoryUsedBytes() {
     uint64_t availableKb = 0;
 
     while (std::getline(file, line)) {
+
         std::istringstream stream(line);
 
         std::string key;
@@ -77,10 +148,52 @@ uint64_t getMemoryUsedBytes() {
     }
 
     return (totalKb - availableKb) * 1024;
+
+#endif
 }
-
-
 CpuTimes readCpuTimes() {
+
+#ifdef __APPLE__
+
+    host_cpu_load_info_data_t cpuInfo{};
+
+    mach_msg_type_number_t count =
+        HOST_CPU_LOAD_INFO_COUNT;
+
+    kern_return_t result =
+        host_statistics(
+            mach_host_self(),
+            HOST_CPU_LOAD_INFO,
+            reinterpret_cast<host_info_t>(&cpuInfo),
+            &count
+        );
+
+    if (result != KERN_SUCCESS) {
+        return {0, 0};
+    }
+
+    uint64_t user =
+        cpuInfo.cpu_ticks[CPU_STATE_USER];
+
+    uint64_t system =
+        cpuInfo.cpu_ticks[CPU_STATE_SYSTEM];
+
+    uint64_t idle =
+        cpuInfo.cpu_ticks[CPU_STATE_IDLE];
+
+    uint64_t nice =
+        cpuInfo.cpu_ticks[CPU_STATE_NICE];
+
+    uint64_t total =
+        user + system + idle + nice;
+
+    return {
+        idle,
+        total
+    };
+
+#else
+
     std::ifstream file("/proc/stat");
 
     std::string cpu;
@@ -121,8 +234,9 @@ CpuTimes readCpuTimes() {
         idleTime,
         totalTime
     };
-}
 
+#endif
+}
 
 double calculateCpuUsage(
         const CpuTimes& previous,
@@ -192,7 +306,16 @@ int main() {
     registerRequest.set_hostname(hostname);
     registerRequest.set_cpu_cores(cpuCores);
     registerRequest.set_memory_bytes(totalMemoryBytes);
-    registerRequest.set_operating_system("Linux");
+    
+    #ifdef __APPLE__
+        const std::string operatingSystem = "macOS";
+    #else
+        const std::string operatingSystem = "Linux";
+    #endif
+
+    registerRequest.set_operating_system(
+    operatingSystem
+    );
 
     forge::v1::RegisterWorkerResponse registerResponse;
 
@@ -256,7 +379,9 @@ int main() {
     hello->set_hostname(hostname);
     hello->set_cpu_cores(cpuCores);
     hello->set_memory_bytes(totalMemoryBytes);
-    hello->set_operating_system("Linux");
+    hello->set_operating_system(
+        operatingSystem
+    );
 
 
     if (!commandStream->Write(helloMessage)) {
