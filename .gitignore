@@ -1,0 +1,20 @@
+# Java
+.gradle/
+build/
+out/
+*.class
+
+# C++
+worker/build/
+*.o
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+.fake

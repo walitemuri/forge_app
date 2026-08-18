@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package forge.v1;
+
+option java_package = "dev.forge.proto";
+option java_multiple_files = true;
+
+service ForgeController {
+
+  rpc RegisterWorker(RegisterWorkerRequest)
+      returns (RegisterWorkerResponse);
+
+  rpc Heartbeat(HeartbeatRequest)
+      returns (HeartbeatResponse);
+}
+
+message RegisterWorkerRequest {
+  string worker_id = 1;
+  string hostname = 2;
+  uint32 cpu_cores = 3;
+  uint64 memory_bytes = 4;
+  string operating_system = 5;
+}
+
+message RegisterWorkerResponse {
+  bool accepted = 1;
+  string message = 2;
+}
+
+message HeartbeatRequest {
+  string worker_id = 1;
+
+  double cpu_usage_percent = 2;
+
+  uint64 memory_used_bytes = 3;
+
+  uint32 running_tasks = 4;
+}
+
+message HeartbeatResponse {
+  bool accepted = 1;
+}

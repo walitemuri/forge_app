@@ -1,0 +1,78 @@
+package dev.forge.controller.grpc;
+
+public class WorkerState {
+
+    private final String workerId;
+    private final String hostname;
+    private final int cpuCores;
+    private final long memoryBytes;
+    private final String operatingSystem;
+
+    private volatile long lastHeartbeat;
+    private volatile double cpuUsage;
+    private volatile long memoryUsed;
+    private volatile int runningTasks;
+    private volatile boolean online;
+
+    public WorkerState(
+            String workerId,
+            String hostname,
+            int cpuCores,
+            long memoryBytes,
+            String operatingSystem) {
+
+        this.workerId = workerId;
+        this.hostname = hostname;
+        this.cpuCores = cpuCores;
+        this.memoryBytes = memoryBytes;
+        this.operatingSystem = operatingSystem;
+
+        this.lastHeartbeat = System.currentTimeMillis();
+        this.online = true;
+    }
+
+    public String getWorkerId() {
+        return workerId;
+    }
+
+    public String getHostname() {
+        return hostname;
+    }
+
+    public long getLastHeartbeat() {
+        return lastHeartbeat;
+    }
+
+    public void updateHeartbeat(
+            double cpuUsage,
+            long memoryUsed,
+            int runningTasks) {
+
+        this.cpuUsage = cpuUsage;
+        this.memoryUsed = memoryUsed;
+        this.runningTasks = runningTasks;
+
+        this.lastHeartbeat = System.currentTimeMillis();
+        this.online = true;
+    }
+
+    public void setOnline(boolean online) {
+        this.online = online;
+    }
+
+    public boolean isOnline() {
+        return online;
+    }
+
+    public double getCpuUsage() {
+        return cpuUsage;
+    }
+
+    public long getMemoryUsed() {
+        return memoryUsed;
+    }
+
+    public int getRunningTasks() {
+        return runningTasks;
+    }
+}
