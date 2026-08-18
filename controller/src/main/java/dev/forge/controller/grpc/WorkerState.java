@@ -1,5 +1,8 @@
 package dev.forge.controller.grpc;
 
+import dev.forge.proto.ControllerMessage;
+import io.grpc.stub.StreamObserver;
+
 public class WorkerState {
 
     private final String workerId;
@@ -13,6 +16,9 @@ public class WorkerState {
     private volatile long memoryUsed;
     private volatile int runningTasks;
     private volatile boolean online;
+
+    // Long-lived gRPC connection used to send commands to this worker
+    private volatile StreamObserver<ControllerMessage> commandStream;
 
     public WorkerState(
             String workerId,
@@ -37,6 +43,18 @@ public class WorkerState {
 
     public String getHostname() {
         return hostname;
+    }
+
+    public int getCpuCores() {
+        return cpuCores;
+    }
+
+    public long getMemoryBytes() {
+        return memoryBytes;
+    }
+
+    public String getOperatingSystem() {
+        return operatingSystem;
     }
 
     public long getLastHeartbeat() {
@@ -74,5 +92,15 @@ public class WorkerState {
 
     public int getRunningTasks() {
         return runningTasks;
+    }
+
+    public void setCommandStream(
+            StreamObserver<ControllerMessage> commandStream) {
+
+        this.commandStream = commandStream;
+    }
+
+    public StreamObserver<ControllerMessage> getCommandStream() {
+        return commandStream;
     }
 }

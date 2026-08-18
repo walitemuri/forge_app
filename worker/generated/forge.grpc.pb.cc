@@ -26,6 +26,7 @@ namespace v1 {
 static const char* ForgeController_method_names[] = {
   "/forge.v1.ForgeController/RegisterWorker",
   "/forge.v1.ForgeController/Heartbeat",
+  "/forge.v1.ForgeController/ConnectWorker",
 };
 
 std::unique_ptr< ForgeController::Stub> ForgeController::NewStub(const std::shared_ptr< ::grpc::ChannelInterface>& channel, const ::grpc::StubOptions& options) {
@@ -37,6 +38,7 @@ std::unique_ptr< ForgeController::Stub> ForgeController::NewStub(const std::shar
 ForgeController::Stub::Stub(const std::shared_ptr< ::grpc::ChannelInterface>& channel, const ::grpc::StubOptions& options)
   : channel_(channel), rpcmethod_RegisterWorker_(ForgeController_method_names[0], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
   , rpcmethod_Heartbeat_(ForgeController_method_names[1], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
+  , rpcmethod_ConnectWorker_(ForgeController_method_names[2], options.suffix_for_stats(),::grpc::internal::RpcMethod::BIDI_STREAMING, channel)
   {}
 
 ::grpc::Status ForgeController::Stub::RegisterWorker(::grpc::ClientContext* context, const ::forge::v1::RegisterWorkerRequest& request, ::forge::v1::RegisterWorkerResponse* response) {
@@ -85,6 +87,22 @@ void ForgeController::Stub::async::Heartbeat(::grpc::ClientContext* context, con
   return result;
 }
 
+::grpc::ClientReaderWriter< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>* ForgeController::Stub::ConnectWorkerRaw(::grpc::ClientContext* context) {
+  return ::grpc::internal::ClientReaderWriterFactory< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>::Create(channel_.get(), rpcmethod_ConnectWorker_, context);
+}
+
+void ForgeController::Stub::async::ConnectWorker(::grpc::ClientContext* context, ::grpc::ClientBidiReactor< ::forge::v1::WorkerMessage,::forge::v1::ControllerMessage>* reactor) {
+  ::grpc::internal::ClientCallbackReaderWriterFactory< ::forge::v1::WorkerMessage,::forge::v1::ControllerMessage>::Create(stub_->channel_.get(), stub_->rpcmethod_ConnectWorker_, context, reactor);
+}
+
+::grpc::ClientAsyncReaderWriter< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>* ForgeController::Stub::AsyncConnectWorkerRaw(::grpc::ClientContext* context, ::grpc::CompletionQueue* cq, void* tag) {
+  return ::grpc::internal::ClientAsyncReaderWriterFactory< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>::Create(channel_.get(), cq, rpcmethod_ConnectWorker_, context, true, tag);
+}
+
+::grpc::ClientAsyncReaderWriter< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>* ForgeController::Stub::PrepareAsyncConnectWorkerRaw(::grpc::ClientContext* context, ::grpc::CompletionQueue* cq) {
+  return ::grpc::internal::ClientAsyncReaderWriterFactory< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>::Create(channel_.get(), cq, rpcmethod_ConnectWorker_, context, false, nullptr);
+}
+
 ForgeController::Service::Service() {
   AddMethod(new ::grpc::internal::RpcServiceMethod(
       ForgeController_method_names[0],
@@ -106,6 +124,16 @@ ForgeController::Service::Service() {
              ::forge::v1::HeartbeatResponse* resp) {
                return service->Heartbeat(ctx, req, resp);
              }, this)));
+  AddMethod(new ::grpc::internal::RpcServiceMethod(
+      ForgeController_method_names[2],
+      ::grpc::internal::RpcMethod::BIDI_STREAMING,
+      new ::grpc::internal::BidiStreamingHandler< ForgeController::Service, ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>(
+          [](ForgeController::Service* service,
+             ::grpc::ServerContext* ctx,
+             ::grpc::ServerReaderWriter<::forge::v1::ControllerMessage,
+             ::forge::v1::WorkerMessage>* stream) {
+               return service->ConnectWorker(ctx, stream);
+             }, this)));
 }
 
 ForgeController::Service::~Service() {
@@ -122,6 +150,12 @@ ForgeController::Service::~Service() {
   (void) context;
   (void) request;
   (void) response;
+  return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+}
+
+::grpc::Status ForgeController::Service::ConnectWorker(::grpc::ServerContext* context, ::grpc::ServerReaderWriter< ::forge::v1::ControllerMessage, ::forge::v1::WorkerMessage>* stream) {
+  (void) context;
+  (void) stream;
   return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
 }
 

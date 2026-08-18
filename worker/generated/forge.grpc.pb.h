@@ -51,6 +51,15 @@ class ForgeController final {
     std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::forge::v1::HeartbeatResponse>> PrepareAsyncHeartbeat(::grpc::ClientContext* context, const ::forge::v1::HeartbeatRequest& request, ::grpc::CompletionQueue* cq) {
       return std::unique_ptr< ::grpc::ClientAsyncResponseReaderInterface< ::forge::v1::HeartbeatResponse>>(PrepareAsyncHeartbeatRaw(context, request, cq));
     }
+    std::unique_ptr< ::grpc::ClientReaderWriterInterface< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>> ConnectWorker(::grpc::ClientContext* context) {
+      return std::unique_ptr< ::grpc::ClientReaderWriterInterface< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>>(ConnectWorkerRaw(context));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncReaderWriterInterface< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>> AsyncConnectWorker(::grpc::ClientContext* context, ::grpc::CompletionQueue* cq, void* tag) {
+      return std::unique_ptr< ::grpc::ClientAsyncReaderWriterInterface< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>>(AsyncConnectWorkerRaw(context, cq, tag));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncReaderWriterInterface< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>> PrepareAsyncConnectWorker(::grpc::ClientContext* context, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncReaderWriterInterface< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>>(PrepareAsyncConnectWorkerRaw(context, cq));
+    }
     class async_interface {
      public:
       virtual ~async_interface() {}
@@ -58,6 +67,7 @@ class ForgeController final {
       virtual void RegisterWorker(::grpc::ClientContext* context, const ::forge::v1::RegisterWorkerRequest* request, ::forge::v1::RegisterWorkerResponse* response, ::grpc::ClientUnaryReactor* reactor) = 0;
       virtual void Heartbeat(::grpc::ClientContext* context, const ::forge::v1::HeartbeatRequest* request, ::forge::v1::HeartbeatResponse* response, std::function<void(::grpc::Status)>) = 0;
       virtual void Heartbeat(::grpc::ClientContext* context, const ::forge::v1::HeartbeatRequest* request, ::forge::v1::HeartbeatResponse* response, ::grpc::ClientUnaryReactor* reactor) = 0;
+      virtual void ConnectWorker(::grpc::ClientContext* context, ::grpc::ClientBidiReactor< ::forge::v1::WorkerMessage,::forge::v1::ControllerMessage>* reactor) = 0;
     };
     typedef class async_interface experimental_async_interface;
     virtual class async_interface* async() { return nullptr; }
@@ -67,6 +77,9 @@ class ForgeController final {
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::forge::v1::RegisterWorkerResponse>* PrepareAsyncRegisterWorkerRaw(::grpc::ClientContext* context, const ::forge::v1::RegisterWorkerRequest& request, ::grpc::CompletionQueue* cq) = 0;
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::forge::v1::HeartbeatResponse>* AsyncHeartbeatRaw(::grpc::ClientContext* context, const ::forge::v1::HeartbeatRequest& request, ::grpc::CompletionQueue* cq) = 0;
     virtual ::grpc::ClientAsyncResponseReaderInterface< ::forge::v1::HeartbeatResponse>* PrepareAsyncHeartbeatRaw(::grpc::ClientContext* context, const ::forge::v1::HeartbeatRequest& request, ::grpc::CompletionQueue* cq) = 0;
+    virtual ::grpc::ClientReaderWriterInterface< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>* ConnectWorkerRaw(::grpc::ClientContext* context) = 0;
+    virtual ::grpc::ClientAsyncReaderWriterInterface< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>* AsyncConnectWorkerRaw(::grpc::ClientContext* context, ::grpc::CompletionQueue* cq, void* tag) = 0;
+    virtual ::grpc::ClientAsyncReaderWriterInterface< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>* PrepareAsyncConnectWorkerRaw(::grpc::ClientContext* context, ::grpc::CompletionQueue* cq) = 0;
   };
   class Stub final : public StubInterface {
    public:
@@ -85,6 +98,15 @@ class ForgeController final {
     std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::forge::v1::HeartbeatResponse>> PrepareAsyncHeartbeat(::grpc::ClientContext* context, const ::forge::v1::HeartbeatRequest& request, ::grpc::CompletionQueue* cq) {
       return std::unique_ptr< ::grpc::ClientAsyncResponseReader< ::forge::v1::HeartbeatResponse>>(PrepareAsyncHeartbeatRaw(context, request, cq));
     }
+    std::unique_ptr< ::grpc::ClientReaderWriter< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>> ConnectWorker(::grpc::ClientContext* context) {
+      return std::unique_ptr< ::grpc::ClientReaderWriter< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>>(ConnectWorkerRaw(context));
+    }
+    std::unique_ptr<  ::grpc::ClientAsyncReaderWriter< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>> AsyncConnectWorker(::grpc::ClientContext* context, ::grpc::CompletionQueue* cq, void* tag) {
+      return std::unique_ptr< ::grpc::ClientAsyncReaderWriter< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>>(AsyncConnectWorkerRaw(context, cq, tag));
+    }
+    std::unique_ptr<  ::grpc::ClientAsyncReaderWriter< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>> PrepareAsyncConnectWorker(::grpc::ClientContext* context, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncReaderWriter< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>>(PrepareAsyncConnectWorkerRaw(context, cq));
+    }
     class async final :
       public StubInterface::async_interface {
      public:
@@ -92,6 +114,7 @@ class ForgeController final {
       void RegisterWorker(::grpc::ClientContext* context, const ::forge::v1::RegisterWorkerRequest* request, ::forge::v1::RegisterWorkerResponse* response, ::grpc::ClientUnaryReactor* reactor) override;
       void Heartbeat(::grpc::ClientContext* context, const ::forge::v1::HeartbeatRequest* request, ::forge::v1::HeartbeatResponse* response, std::function<void(::grpc::Status)>) override;
       void Heartbeat(::grpc::ClientContext* context, const ::forge::v1::HeartbeatRequest* request, ::forge::v1::HeartbeatResponse* response, ::grpc::ClientUnaryReactor* reactor) override;
+      void ConnectWorker(::grpc::ClientContext* context, ::grpc::ClientBidiReactor< ::forge::v1::WorkerMessage,::forge::v1::ControllerMessage>* reactor) override;
      private:
       friend class Stub;
       explicit async(Stub* stub): stub_(stub) { }
@@ -107,8 +130,12 @@ class ForgeController final {
     ::grpc::ClientAsyncResponseReader< ::forge::v1::RegisterWorkerResponse>* PrepareAsyncRegisterWorkerRaw(::grpc::ClientContext* context, const ::forge::v1::RegisterWorkerRequest& request, ::grpc::CompletionQueue* cq) override;
     ::grpc::ClientAsyncResponseReader< ::forge::v1::HeartbeatResponse>* AsyncHeartbeatRaw(::grpc::ClientContext* context, const ::forge::v1::HeartbeatRequest& request, ::grpc::CompletionQueue* cq) override;
     ::grpc::ClientAsyncResponseReader< ::forge::v1::HeartbeatResponse>* PrepareAsyncHeartbeatRaw(::grpc::ClientContext* context, const ::forge::v1::HeartbeatRequest& request, ::grpc::CompletionQueue* cq) override;
+    ::grpc::ClientReaderWriter< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>* ConnectWorkerRaw(::grpc::ClientContext* context) override;
+    ::grpc::ClientAsyncReaderWriter< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>* AsyncConnectWorkerRaw(::grpc::ClientContext* context, ::grpc::CompletionQueue* cq, void* tag) override;
+    ::grpc::ClientAsyncReaderWriter< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>* PrepareAsyncConnectWorkerRaw(::grpc::ClientContext* context, ::grpc::CompletionQueue* cq) override;
     const ::grpc::internal::RpcMethod rpcmethod_RegisterWorker_;
     const ::grpc::internal::RpcMethod rpcmethod_Heartbeat_;
+    const ::grpc::internal::RpcMethod rpcmethod_ConnectWorker_;
   };
   static std::unique_ptr<Stub> NewStub(const std::shared_ptr< ::grpc::ChannelInterface>& channel, const ::grpc::StubOptions& options = ::grpc::StubOptions());
 
@@ -118,6 +145,7 @@ class ForgeController final {
     virtual ~Service();
     virtual ::grpc::Status RegisterWorker(::grpc::ServerContext* context, const ::forge::v1::RegisterWorkerRequest* request, ::forge::v1::RegisterWorkerResponse* response);
     virtual ::grpc::Status Heartbeat(::grpc::ServerContext* context, const ::forge::v1::HeartbeatRequest* request, ::forge::v1::HeartbeatResponse* response);
+    virtual ::grpc::Status ConnectWorker(::grpc::ServerContext* context, ::grpc::ServerReaderWriter< ::forge::v1::ControllerMessage, ::forge::v1::WorkerMessage>* stream);
   };
   template <class BaseClass>
   class WithAsyncMethod_RegisterWorker : public BaseClass {
@@ -159,7 +187,27 @@ class ForgeController final {
       ::grpc::Service::RequestAsyncUnary(1, context, request, response, new_call_cq, notification_cq, tag);
     }
   };
-  typedef WithAsyncMethod_RegisterWorker<WithAsyncMethod_Heartbeat<Service > > AsyncService;
+  template <class BaseClass>
+  class WithAsyncMethod_ConnectWorker : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithAsyncMethod_ConnectWorker() {
+      ::grpc::Service::MarkMethodAsync(2);
+    }
+    ~WithAsyncMethod_ConnectWorker() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status ConnectWorker(::grpc::ServerContext* /*context*/, ::grpc::ServerReaderWriter< ::forge::v1::ControllerMessage, ::forge::v1::WorkerMessage>* /*stream*/)  override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    void RequestConnectWorker(::grpc::ServerContext* context, ::grpc::ServerAsyncReaderWriter< ::forge::v1::ControllerMessage, ::forge::v1::WorkerMessage>* stream, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+      ::grpc::Service::RequestAsyncBidiStreaming(2, context, stream, new_call_cq, notification_cq, tag);
+    }
+  };
+  typedef WithAsyncMethod_RegisterWorker<WithAsyncMethod_Heartbeat<WithAsyncMethod_ConnectWorker<Service > > > AsyncService;
   template <class BaseClass>
   class WithCallbackMethod_RegisterWorker : public BaseClass {
    private:
@@ -214,7 +262,30 @@ class ForgeController final {
     virtual ::grpc::ServerUnaryReactor* Heartbeat(
       ::grpc::CallbackServerContext* /*context*/, const ::forge::v1::HeartbeatRequest* /*request*/, ::forge::v1::HeartbeatResponse* /*response*/)  { return nullptr; }
   };
-  typedef WithCallbackMethod_RegisterWorker<WithCallbackMethod_Heartbeat<Service > > CallbackService;
+  template <class BaseClass>
+  class WithCallbackMethod_ConnectWorker : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithCallbackMethod_ConnectWorker() {
+      ::grpc::Service::MarkMethodCallback(2,
+          new ::grpc::internal::CallbackBidiHandler< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>(
+            [this](
+                   ::grpc::CallbackServerContext* context) { return this->ConnectWorker(context); }));
+    }
+    ~WithCallbackMethod_ConnectWorker() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status ConnectWorker(::grpc::ServerContext* /*context*/, ::grpc::ServerReaderWriter< ::forge::v1::ControllerMessage, ::forge::v1::WorkerMessage>* /*stream*/)  override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    virtual ::grpc::ServerBidiReactor< ::forge::v1::WorkerMessage, ::forge::v1::ControllerMessage>* ConnectWorker(
+      ::grpc::CallbackServerContext* /*context*/)
+      { return nullptr; }
+  };
+  typedef WithCallbackMethod_RegisterWorker<WithCallbackMethod_Heartbeat<WithCallbackMethod_ConnectWorker<Service > > > CallbackService;
   typedef CallbackService ExperimentalCallbackService;
   template <class BaseClass>
   class WithGenericMethod_RegisterWorker : public BaseClass {
@@ -246,6 +317,23 @@ class ForgeController final {
     }
     // disable synchronous version of this method
     ::grpc::Status Heartbeat(::grpc::ServerContext* /*context*/, const ::forge::v1::HeartbeatRequest* /*request*/, ::forge::v1::HeartbeatResponse* /*response*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+  };
+  template <class BaseClass>
+  class WithGenericMethod_ConnectWorker : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithGenericMethod_ConnectWorker() {
+      ::grpc::Service::MarkMethodGeneric(2);
+    }
+    ~WithGenericMethod_ConnectWorker() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status ConnectWorker(::grpc::ServerContext* /*context*/, ::grpc::ServerReaderWriter< ::forge::v1::ControllerMessage, ::forge::v1::WorkerMessage>* /*stream*/)  override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
@@ -291,6 +379,26 @@ class ForgeController final {
     }
   };
   template <class BaseClass>
+  class WithRawMethod_ConnectWorker : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithRawMethod_ConnectWorker() {
+      ::grpc::Service::MarkMethodRaw(2);
+    }
+    ~WithRawMethod_ConnectWorker() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status ConnectWorker(::grpc::ServerContext* /*context*/, ::grpc::ServerReaderWriter< ::forge::v1::ControllerMessage, ::forge::v1::WorkerMessage>* /*stream*/)  override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    void RequestConnectWorker(::grpc::ServerContext* context, ::grpc::ServerAsyncReaderWriter< ::grpc::ByteBuffer, ::grpc::ByteBuffer>* stream, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+      ::grpc::Service::RequestAsyncBidiStreaming(2, context, stream, new_call_cq, notification_cq, tag);
+    }
+  };
+  template <class BaseClass>
   class WithRawCallbackMethod_RegisterWorker : public BaseClass {
    private:
     void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
@@ -333,6 +441,29 @@ class ForgeController final {
     }
     virtual ::grpc::ServerUnaryReactor* Heartbeat(
       ::grpc::CallbackServerContext* /*context*/, const ::grpc::ByteBuffer* /*request*/, ::grpc::ByteBuffer* /*response*/)  { return nullptr; }
+  };
+  template <class BaseClass>
+  class WithRawCallbackMethod_ConnectWorker : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithRawCallbackMethod_ConnectWorker() {
+      ::grpc::Service::MarkMethodRawCallback(2,
+          new ::grpc::internal::CallbackBidiHandler< ::grpc::ByteBuffer, ::grpc::ByteBuffer>(
+            [this](
+                   ::grpc::CallbackServerContext* context) { return this->ConnectWorker(context); }));
+    }
+    ~WithRawCallbackMethod_ConnectWorker() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status ConnectWorker(::grpc::ServerContext* /*context*/, ::grpc::ServerReaderWriter< ::forge::v1::ControllerMessage, ::forge::v1::WorkerMessage>* /*stream*/)  override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    virtual ::grpc::ServerBidiReactor< ::grpc::ByteBuffer, ::grpc::ByteBuffer>* ConnectWorker(
+      ::grpc::CallbackServerContext* /*context*/)
+      { return nullptr; }
   };
   template <class BaseClass>
   class WithStreamedUnaryMethod_RegisterWorker : public BaseClass {
