@@ -12,6 +12,7 @@ add_executable(
     forge-worker
 
     src/main.cpp
+    src/ProcessExecutor.cpp
 
     generated/forge.pb.cc
     generated/forge.grpc.pb.cc

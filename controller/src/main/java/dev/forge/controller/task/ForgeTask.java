@@ -13,6 +13,11 @@ public class ForgeTask {
     private volatile TaskStatus status;
     private volatile String workerId;
 
+    private volatile Integer exitCode;
+    private volatile String stdout;
+    private volatile String stderr;
+
+
     public ForgeTask(
             String id,
             String command,
@@ -21,11 +26,11 @@ public class ForgeTask {
         this.id = id;
         this.command = command;
         this.arguments = List.copyOf(arguments);
-
         this.createdAt = Instant.now();
 
         this.status = TaskStatus.CREATED;
     }
+
 
     public String getId() {
         return id;
@@ -57,5 +62,39 @@ public class ForgeTask {
 
     public void setWorkerId(String workerId) {
         this.workerId = workerId;
+    }
+
+    public Integer getExitCode() {
+        return exitCode;
+    }
+
+    public String getStdout() {
+        return stdout;
+    }
+
+    public String getStderr() {
+        return stderr;
+    }
+
+
+    public void markRunning() {
+        this.status = TaskStatus.RUNNING;
+    }
+
+
+    public void complete(
+            boolean success,
+            int exitCode,
+            String stdout,
+            String stderr) {
+
+        this.exitCode = exitCode;
+        this.stdout = stdout;
+        this.stderr = stderr;
+
+        this.status =
+                success
+                        ? TaskStatus.SUCCEEDED
+                        : TaskStatus.FAILED;
     }
 }

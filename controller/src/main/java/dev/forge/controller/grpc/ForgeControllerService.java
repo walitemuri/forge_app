@@ -1,5 +1,7 @@
 package dev.forge.controller.grpc;
 
+import dev.forge.controller.task.ForgeTask;
+import dev.forge.controller.task.TaskRegistry;
 import dev.forge.proto.ControllerMessage;
 import dev.forge.proto.ForgeControllerGrpc;
 import dev.forge.proto.HeartbeatRequest;
@@ -10,8 +12,22 @@ import dev.forge.proto.WorkerMessage;
 
 import io.grpc.stub.StreamObserver;
 
+import org.springframework.stereotype.Component;
+
+
+@Component
 public class ForgeControllerService
         extends ForgeControllerGrpc.ForgeControllerImplBase {
+
+    private final TaskRegistry taskRegistry;
+
+
+    public ForgeControllerService(
+            TaskRegistry taskRegistry) {
+
+        this.taskRegistry = taskRegistry;
+    }
+
 
     @Override
     public void registerWorker(
@@ -28,6 +44,7 @@ public class ForgeControllerService
 
         WorkerRegistry.register(worker);
 
+
         System.out.println();
         System.out.println("=== WORKER REGISTERED ===");
         System.out.println("ID:       " + request.getWorkerId());
@@ -38,15 +55,18 @@ public class ForgeControllerService
         System.out.println("=========================");
         System.out.println();
 
+
         RegisterWorkerResponse response =
                 RegisterWorkerResponse.newBuilder()
                         .setAccepted(true)
                         .setMessage("Worker registered successfully")
                         .build();
 
+
         responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
+
 
     @Override
     public void heartbeat(
@@ -55,6 +75,7 @@ public class ForgeControllerService
 
         WorkerState worker =
                 WorkerRegistry.get(request.getWorkerId());
+
 
         if (worker == null) {
 
@@ -65,10 +86,14 @@ public class ForgeControllerService
             );
 
             responseObserver.onCompleted();
+
             return;
         }
 
-        boolean wasOffline = !worker.isOnline();
+
+        boolean wasOffline =
+                !worker.isOnline();
+
 
         worker.updateHeartbeat(
                 request.getCpuUsagePercent(),
@@ -76,12 +101,15 @@ public class ForgeControllerService
                 request.getRunningTasks()
         );
 
+
         if (wasOffline) {
+
             System.out.println(
                     "✓ WORKER ONLINE: "
                             + request.getWorkerId()
             );
         }
+
 
         System.out.println(
                 "[heartbeat] "
@@ -95,6 +123,7 @@ public class ForgeControllerService
                         + request.getMemoryUsedBytes()
         );
 
+
         responseObserver.onNext(
                 HeartbeatResponse.newBuilder()
                         .setAccepted(true)
@@ -104,6 +133,7 @@ public class ForgeControllerService
         responseObserver.onCompleted();
     }
 
+
     @Override
     public StreamObserver<WorkerMessage> connectWorker(
             StreamObserver<ControllerMessage> responseObserver) {
@@ -112,16 +142,23 @@ public class ForgeControllerService
 
             private String connectedWorkerId;
 
+
             @Override
             public void onNext(WorkerMessage message) {
+
+                // =================================================
+                // Worker connected
+                // =================================================
 
                 if (message.hasHello()) {
 
                     connectedWorkerId =
                             message.getHello().getWorkerId();
 
+
                     WorkerState worker =
                             WorkerRegistry.get(connectedWorkerId);
+
 
                     if (worker == null) {
 
@@ -133,7 +170,11 @@ public class ForgeControllerService
                         return;
                     }
 
-                    worker.setCommandStream(responseObserver);
+
+                    worker.setCommandStream(
+                            responseObserver
+                    );
+
 
                     System.out.println(
                             "✓ COMMAND STREAM CONNECTED: "
@@ -141,26 +182,110 @@ public class ForgeControllerService
                     );
                 }
 
+
+                // =================================================
+                // Worker accepted task
+                // =================================================
+
                 if (message.hasTaskAccepted()) {
 
-                    System.out.println(
-                            "Task accepted: "
-                                    + message
+                    String taskId =
+                            message
                                     .getTaskAccepted()
-                                    .getTaskId()
-                    );
+                                    .getTaskId();
+
+
+                    ForgeTask task =
+                            taskRegistry.get(taskId);
+
+
+                    if (task != null) {
+
+                        task.markRunning();
+
+
+                        System.out.println(
+                                "▶ TASK RUNNING: "
+                                        + taskId
+                        );
+                    }
                 }
+
+
+                // =================================================
+                // Worker completed task
+                // =================================================
 
                 if (message.hasTaskResult()) {
 
-                    System.out.println(
-                            "Task completed: "
-                                    + message
-                                    .getTaskResult()
-                                    .getTaskId()
-                    );
+                    var result =
+                            message.getTaskResult();
+
+
+                    ForgeTask task =
+                            taskRegistry.get(
+                                    result.getTaskId()
+                            );
+
+
+                    if (task != null) {
+
+                        task.complete(
+                                result.getSuccess(),
+                                result.getExitCode(),
+                                result.getStdout(),
+                                result.getStderr()
+                        );
+
+
+                        System.out.println();
+                        System.out.println(
+                                "=== TASK FINISHED ==="
+                        );
+
+                        System.out.println(
+                                "Task: "
+                                        + result.getTaskId()
+                        );
+
+                        System.out.println(
+                                "Status: "
+                                        + task.getStatus()
+                        );
+
+                        System.out.println(
+                                "Exit code: "
+                                        + result.getExitCode()
+                        );
+
+                        System.out.println(
+                                "stdout:"
+                        );
+
+                        System.out.println(
+                                result.getStdout()
+                        );
+
+
+                        if (!result.getStderr().isEmpty()) {
+
+                            System.out.println(
+                                    "stderr:"
+                            );
+
+                            System.out.println(
+                                    result.getStderr()
+                            );
+                        }
+
+
+                        System.out.println(
+                                "====================="
+                        );
+                    }
                 }
             }
+
 
             @Override
             public void onError(Throwable throwable) {
@@ -172,6 +297,7 @@ public class ForgeControllerService
                                 + throwable.getMessage()
                 );
 
+
                 if (connectedWorkerId != null) {
 
                     WorkerState worker =
@@ -179,11 +305,16 @@ public class ForgeControllerService
                                     connectedWorkerId
                             );
 
+
                     if (worker != null) {
-                        worker.setCommandStream(null);
+
+                        worker.setCommandStream(
+                                null
+                        );
                     }
                 }
             }
+
 
             @Override
             public void onCompleted() {
@@ -193,6 +324,7 @@ public class ForgeControllerService
                                 + connectedWorkerId
                 );
 
+
                 if (connectedWorkerId != null) {
 
                     WorkerState worker =
@@ -200,10 +332,15 @@ public class ForgeControllerService
                                     connectedWorkerId
                             );
 
+
                     if (worker != null) {
-                        worker.setCommandStream(null);
+
+                        worker.setCommandStream(
+                                null
+                        );
                     }
                 }
+
 
                 responseObserver.onCompleted();
             }
