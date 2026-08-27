@@ -105,7 +105,8 @@ public class TaskService {
         task.setStatus(
                 TaskStatus.DISPATCHED
         );
-
+        
+        taskRegistry.save(task);
 
         System.out.println();
         System.out.println(

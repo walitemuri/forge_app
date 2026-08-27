@@ -1,6 +1,7 @@
 package dev.forge.controller.api;
 
 import dev.forge.controller.task.ForgeTask;
+import dev.forge.controller.task.TaskRegistry;
 import dev.forge.controller.task.TaskService;
 
 import org.springframework.http.HttpStatus;
@@ -12,7 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
+import dev.forge.controller.task.TaskRegistry;
 
 import java.util.List;
 
@@ -22,14 +23,19 @@ import java.util.List;
 public class TaskController {
 
     private final TaskService taskService;
+    private final TaskRegistry taskRegistry;
 
 
     public TaskController(
-            TaskService taskService) {
+        TaskService taskService,
+        TaskRegistry taskRegistry) {
 
-        this.taskService = taskService;
+    this.taskService =
+            taskService;
+
+    this.taskRegistry =
+            taskRegistry;
     }
-
 
     @PostMapping
     public ResponseEntity<?> submitTask(
@@ -100,5 +106,17 @@ public class TaskController {
         return ResponseEntity.ok(
                 TaskResponse.from(task)
         );
+    }
+    @GetMapping
+    public ResponseEntity<List<TaskResponse>> getTasks() {
+
+        List<TaskResponse> tasks =
+                taskRegistry
+                        .getAll()
+                        .stream()
+                        .map(TaskResponse::from)
+                        .toList();
+
+        return ResponseEntity.ok(tasks);
     }
 }

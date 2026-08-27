@@ -2,25 +2,48 @@ package dev.forge.controller.task;
 
 import org.springframework.stereotype.Component;
 
-import java.util.Collection;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.List;
+
 
 @Component
 public class TaskRegistry {
 
-    private final Map<String, ForgeTask> tasks =
-            new ConcurrentHashMap<>();
+    private final ForgeTaskRepository repository;
 
-    public void register(ForgeTask task) {
-        tasks.put(task.getId(), task);
+
+    public TaskRegistry(
+            ForgeTaskRepository repository) {
+
+        this.repository =
+                repository;
     }
 
-    public ForgeTask get(String taskId) {
-        return tasks.get(taskId);
+
+    public ForgeTask register(
+            ForgeTask task) {
+
+        return repository.save(task);
     }
 
-    public Collection<ForgeTask> getAll() {
-        return tasks.values();
+
+    public ForgeTask save(
+            ForgeTask task) {
+
+        return repository.save(task);
+    }
+
+
+    public ForgeTask get(
+            String taskId) {
+
+        return repository
+                .findById(taskId)
+                .orElse(null);
+    }
+
+
+    public List<ForgeTask> getAll() {
+
+        return repository.findAll();
     }
 }

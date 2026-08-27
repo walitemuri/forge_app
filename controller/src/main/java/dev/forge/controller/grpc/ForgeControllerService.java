@@ -2,6 +2,7 @@ package dev.forge.controller.grpc;
 
 import dev.forge.controller.task.ForgeTask;
 import dev.forge.controller.task.TaskRegistry;
+
 import dev.forge.proto.ControllerMessage;
 import dev.forge.proto.ForgeControllerGrpc;
 import dev.forge.proto.HeartbeatRequest;
@@ -29,9 +30,9 @@ public class ForgeControllerService
     }
 
 
-    // =========================================================
+    // ============================================================
     // Worker registration
-    // =========================================================
+    // ============================================================
 
     @Override
     public void registerWorker(
@@ -54,9 +55,20 @@ public class ForgeControllerService
         System.out.println("=== WORKER REGISTERED ===");
         System.out.println("ID:       " + request.getWorkerId());
         System.out.println("Hostname: " + request.getHostname());
-        System.out.println("CPU:      " + request.getCpuCores() + " cores");
-        System.out.println("Memory:   " + request.getMemoryBytes() + " bytes");
-        System.out.println("OS:       " + request.getOperatingSystem());
+        System.out.println(
+                "CPU:      "
+                        + request.getCpuCores()
+                        + " cores"
+        );
+        System.out.println(
+                "Memory:   "
+                        + request.getMemoryBytes()
+                        + " bytes"
+        );
+        System.out.println(
+                "OS:       "
+                        + request.getOperatingSystem()
+        );
         System.out.println("=========================");
         System.out.println();
 
@@ -76,9 +88,9 @@ public class ForgeControllerService
     }
 
 
-    // =========================================================
+    // ============================================================
     // Worker heartbeat
-    // =========================================================
+    // ============================================================
 
     @Override
     public void heartbeat(
@@ -126,17 +138,6 @@ public class ForgeControllerService
         }
 
 
-        /*
-         * RUNNING:
-         *     tasks currently executing on the worker
-         *
-         * OUTSTANDING:
-         *     tasks assigned by the controller that have
-         *     not completed yet
-         *
-         * LOAD:
-         *     effective scheduler load
-         */
         System.out.println(
                 "[heartbeat] "
                         + request.getWorkerId()
@@ -167,9 +168,9 @@ public class ForgeControllerService
     }
 
 
-    // =========================================================
+    // ============================================================
     // Long-lived worker command stream
-    // =========================================================
+    // ============================================================
 
     @Override
     public StreamObserver<WorkerMessage> connectWorker(
@@ -180,13 +181,17 @@ public class ForgeControllerService
             private String connectedWorkerId;
 
 
+            // ====================================================
+            // Incoming worker message
+            // ====================================================
+
             @Override
             public void onNext(
                     WorkerMessage message) {
 
-                // =============================================
-                // Worker connected
-                // =============================================
+                // ------------------------------------------------
+                // WorkerHello
+                // ------------------------------------------------
 
                 if (message.hasHello()) {
 
@@ -205,7 +210,8 @@ public class ForgeControllerService
                     if (worker == null) {
 
                         System.err.println(
-                                "Unknown worker attempted stream connection: "
+                                "Unknown worker attempted "
+                                        + "stream connection: "
                                         + connectedWorkerId
                         );
 
@@ -225,9 +231,9 @@ public class ForgeControllerService
                 }
 
 
-                // =============================================
-                // Worker accepted task
-                // =============================================
+                // ------------------------------------------------
+                // TaskAccepted
+                // ------------------------------------------------
 
                 if (message.hasTaskAccepted()) {
 
@@ -247,6 +253,11 @@ public class ForgeControllerService
 
                         task.markRunning();
 
+                        /*
+                         * Persist RUNNING state.
+                         */
+                        taskRegistry.save(task);
+
 
                         System.out.println(
                                 "▶ TASK RUNNING: "
@@ -256,9 +267,9 @@ public class ForgeControllerService
                 }
 
 
-                // =============================================
-                // Worker completed task
-                // =============================================
+                // ------------------------------------------------
+                // TaskResult
+                // ------------------------------------------------
 
                 if (message.hasTaskResult()) {
 
@@ -275,8 +286,10 @@ public class ForgeControllerService
                     if (task != null) {
 
                         /*
-                         * This task no longer counts against the
-                         * worker's controller-side reservation.
+                         * Release the controller-side reservation.
+                         *
+                         * Do this only when the task actually finishes,
+                         * not when the worker merely accepts it.
                          */
                         WorkerState worker =
                                 WorkerRegistry.get(
@@ -290,12 +303,21 @@ public class ForgeControllerService
                         }
 
 
+                        /*
+                         * Update task with final execution result.
+                         */
                         task.complete(
                                 result.getSuccess(),
                                 result.getExitCode(),
                                 result.getStdout(),
                                 result.getStderr()
                         );
+
+
+                        /*
+                         * Persist final state to PostgreSQL.
+                         */
+                        taskRegistry.save(task);
 
 
                         System.out.println();
@@ -306,11 +328,6 @@ public class ForgeControllerService
                         System.out.println(
                                 "Task: "
                                         + result.getTaskId()
-                        );
-
-                        System.out.println(
-                                "Worker: "
-                                        + task.getWorkerId()
                         );
 
                         System.out.println(
@@ -347,12 +364,7 @@ public class ForgeControllerService
                         if (worker != null) {
 
                             System.out.println(
-                                    "Worker outstanding: "
-                                            + worker.getOutstandingTasks()
-                            );
-
-                            System.out.println(
-                                    "Worker effective load: "
+                                    "Worker load after completion: "
                                             + worker.getEffectiveLoad()
                             );
                         }
@@ -361,14 +373,16 @@ public class ForgeControllerService
                         System.out.println(
                                 "====================="
                         );
+
+                        System.out.println();
                     }
                 }
             }
 
 
-            // =================================================
-            // Stream failure
-            // =================================================
+            // ====================================================
+            // Worker stream error
+            // ====================================================
 
             @Override
             public void onError(
@@ -400,9 +414,9 @@ public class ForgeControllerService
             }
 
 
-            // =================================================
-            // Stream closed normally
-            // =================================================
+            // ====================================================
+            // Worker gracefully closed stream
+            // ====================================================
 
             @Override
             public void onCompleted() {
