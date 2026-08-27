@@ -13,6 +13,7 @@ add_executable(
 
     src/main.cpp
     src/ProcessExecutor.cpp
+    src/TaskExecutorPool.cpp
 
     generated/forge.pb.cc
     generated/forge.grpc.pb.cc

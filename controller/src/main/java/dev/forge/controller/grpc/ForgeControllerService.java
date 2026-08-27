@@ -121,6 +121,8 @@ public class ForgeControllerService
                         )
                         + "% RAM="
                         + request.getMemoryUsedBytes()
+                        + " TASKS="
+                        + request.getRunningTasks()
         );
 
 
