@@ -29,6 +29,10 @@ public class ForgeControllerService
     }
 
 
+    // =========================================================
+    // Worker registration
+    // =========================================================
+
     @Override
     public void registerWorker(
             RegisterWorkerRequest request,
@@ -41,6 +45,7 @@ public class ForgeControllerService
                 request.getMemoryBytes(),
                 request.getOperatingSystem()
         );
+
 
         WorkerRegistry.register(worker);
 
@@ -57,9 +62,12 @@ public class ForgeControllerService
 
 
         RegisterWorkerResponse response =
-                RegisterWorkerResponse.newBuilder()
+                RegisterWorkerResponse
+                        .newBuilder()
                         .setAccepted(true)
-                        .setMessage("Worker registered successfully")
+                        .setMessage(
+                                "Worker registered successfully"
+                        )
                         .build();
 
 
@@ -68,19 +76,26 @@ public class ForgeControllerService
     }
 
 
+    // =========================================================
+    // Worker heartbeat
+    // =========================================================
+
     @Override
     public void heartbeat(
             HeartbeatRequest request,
             StreamObserver<HeartbeatResponse> responseObserver) {
 
         WorkerState worker =
-                WorkerRegistry.get(request.getWorkerId());
+                WorkerRegistry.get(
+                        request.getWorkerId()
+                );
 
 
         if (worker == null) {
 
             responseObserver.onNext(
-                    HeartbeatResponse.newBuilder()
+                    HeartbeatResponse
+                            .newBuilder()
                             .setAccepted(false)
                             .build()
             );
@@ -111,6 +126,17 @@ public class ForgeControllerService
         }
 
 
+        /*
+         * RUNNING:
+         *     tasks currently executing on the worker
+         *
+         * OUTSTANDING:
+         *     tasks assigned by the controller that have
+         *     not completed yet
+         *
+         * LOAD:
+         *     effective scheduler load
+         */
         System.out.println(
                 "[heartbeat] "
                         + request.getWorkerId()
@@ -121,13 +147,18 @@ public class ForgeControllerService
                         )
                         + "% RAM="
                         + request.getMemoryUsedBytes()
-                        + " TASKS="
+                        + " RUNNING="
                         + request.getRunningTasks()
+                        + " OUTSTANDING="
+                        + worker.getOutstandingTasks()
+                        + " LOAD="
+                        + worker.getEffectiveLoad()
         );
 
 
         responseObserver.onNext(
-                HeartbeatResponse.newBuilder()
+                HeartbeatResponse
+                        .newBuilder()
                         .setAccepted(true)
                         .build()
         );
@@ -135,6 +166,10 @@ public class ForgeControllerService
         responseObserver.onCompleted();
     }
 
+
+    // =========================================================
+    // Long-lived worker command stream
+    // =========================================================
 
     @Override
     public StreamObserver<WorkerMessage> connectWorker(
@@ -146,20 +181,25 @@ public class ForgeControllerService
 
 
             @Override
-            public void onNext(WorkerMessage message) {
+            public void onNext(
+                    WorkerMessage message) {
 
-                // =================================================
+                // =============================================
                 // Worker connected
-                // =================================================
+                // =============================================
 
                 if (message.hasHello()) {
 
                     connectedWorkerId =
-                            message.getHello().getWorkerId();
+                            message
+                                    .getHello()
+                                    .getWorkerId();
 
 
                     WorkerState worker =
-                            WorkerRegistry.get(connectedWorkerId);
+                            WorkerRegistry.get(
+                                    connectedWorkerId
+                            );
 
 
                     if (worker == null) {
@@ -185,9 +225,9 @@ public class ForgeControllerService
                 }
 
 
-                // =================================================
+                // =============================================
                 // Worker accepted task
-                // =================================================
+                // =============================================
 
                 if (message.hasTaskAccepted()) {
 
@@ -198,7 +238,9 @@ public class ForgeControllerService
 
 
                     ForgeTask task =
-                            taskRegistry.get(taskId);
+                            taskRegistry.get(
+                                    taskId
+                            );
 
 
                     if (task != null) {
@@ -214,9 +256,9 @@ public class ForgeControllerService
                 }
 
 
-                // =================================================
+                // =============================================
                 // Worker completed task
-                // =================================================
+                // =============================================
 
                 if (message.hasTaskResult()) {
 
@@ -231,6 +273,22 @@ public class ForgeControllerService
 
 
                     if (task != null) {
+
+                        /*
+                         * This task no longer counts against the
+                         * worker's controller-side reservation.
+                         */
+                        WorkerState worker =
+                                WorkerRegistry.get(
+                                        task.getWorkerId()
+                                );
+
+
+                        if (worker != null) {
+
+                            worker.releaseTask();
+                        }
+
 
                         task.complete(
                                 result.getSuccess(),
@@ -248,6 +306,11 @@ public class ForgeControllerService
                         System.out.println(
                                 "Task: "
                                         + result.getTaskId()
+                        );
+
+                        System.out.println(
+                                "Worker: "
+                                        + task.getWorkerId()
                         );
 
                         System.out.println(
@@ -281,6 +344,20 @@ public class ForgeControllerService
                         }
 
 
+                        if (worker != null) {
+
+                            System.out.println(
+                                    "Worker outstanding: "
+                                            + worker.getOutstandingTasks()
+                            );
+
+                            System.out.println(
+                                    "Worker effective load: "
+                                            + worker.getEffectiveLoad()
+                            );
+                        }
+
+
                         System.out.println(
                                 "====================="
                         );
@@ -289,8 +366,13 @@ public class ForgeControllerService
             }
 
 
+            // =================================================
+            // Stream failure
+            // =================================================
+
             @Override
-            public void onError(Throwable throwable) {
+            public void onError(
+                    Throwable throwable) {
 
                 System.err.println(
                         "Worker stream error: "
@@ -317,6 +399,10 @@ public class ForgeControllerService
                 }
             }
 
+
+            // =================================================
+            // Stream closed normally
+            // =================================================
 
             @Override
             public void onCompleted() {
