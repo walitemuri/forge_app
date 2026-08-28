@@ -176,11 +176,12 @@ void TaskExecutorPool::workerLoop() {
             }
 
 
-            ProcessResult result =
-                executeProcess(
-                    task.command(),
-                    arguments
-                );
+           ProcessResult result =
+            executeProcess(
+                task.command(),
+                arguments,
+                task.timeout_seconds()
+            );
 
 
             onTaskCompleted_(
@@ -197,9 +198,9 @@ void TaskExecutorPool::workerLoop() {
                 "",
                 std::string(
                     "Worker execution error: "
-                ) + exception.what()
+                ) + exception.what(),
+                false
             };
-
 
             onTaskCompleted_(
                 task,
@@ -211,7 +212,8 @@ void TaskExecutorPool::workerLoop() {
             ProcessResult result{
                 -1,
                 "",
-                "Unknown worker execution error"
+                "Unknown worker execution error",
+                false
             };
 
 

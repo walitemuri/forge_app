@@ -451,12 +451,11 @@ int main(int argc, char* argv[]) {
 
                 const auto& task = message.task_assignment();
 
-                std::cout << "\n";
                 std::cout << "=== TASK RECEIVED ===\n";
                 std::cout << "Task ID: " << task.task_id() << "\n";
                 std::cout << "Command: " << task.command() << "\n";
+                std::cout << "Timeout: " << task.timeout_seconds() << " seconds\n";
                 std::cout << "Queueing task...\n";
-                std::cout << "=====================\n";
 
                 executorPool.submit(task);
             }

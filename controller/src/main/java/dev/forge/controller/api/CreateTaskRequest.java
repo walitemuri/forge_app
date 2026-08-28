@@ -6,6 +6,7 @@ import java.util.List;
 public record CreateTaskRequest(
         String command,
         List<String> arguments,
-        Integer maxAttempts
+        Integer maxAttempts,
+        Integer timeoutSeconds
 ) {
 }

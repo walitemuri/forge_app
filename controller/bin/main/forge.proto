@@ -52,6 +52,7 @@ message TaskAssignment {
   string command = 2;
   repeated string arguments = 3;
   string attempt_id = 4;
+  uint32 timeout_seconds = 5;
 }
 
 message TaskAccepted {

@@ -53,6 +53,12 @@ public class ForgeTask {
     private String stderr;
 
     @Column(
+        name = "timeout_seconds",
+        nullable = false
+    )
+    private int timeoutSeconds;
+
+    @Column(
         name = "max_attempts",
         nullable = false
     )
@@ -68,13 +74,15 @@ public class ForgeTask {
         String id,
         String command,
         List<String> arguments,
-        int maxAttempts)  {
-        
-            this.maxAttempts =
-        maxAttempts; 
+        int maxAttempts,
+        int timeoutSeconds) {
+
+        this.timeoutSeconds = timeoutSeconds;
+        this.maxAttempts = maxAttempts; 
         this.id = id;
         this.command = command;
         this.maxAttempts = maxAttempts;
+        this.timeoutSeconds = timeoutSeconds;
 
         this.arguments =
                 new ArrayList<>(arguments);
@@ -84,6 +92,9 @@ public class ForgeTask {
 
         this.status =
                 TaskStatus.CREATED;
+    }
+    public int getTimeoutSeconds() {
+        return timeoutSeconds;
     }
     public int getMaxAttempts() {
         return maxAttempts;

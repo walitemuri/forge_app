@@ -1097,6 +1097,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED TaskAssignment final : public ::goo
     kTaskIdFieldNumber = 1,
     kCommandFieldNumber = 2,
     kAttemptIdFieldNumber = 4,
+    kTimeoutSecondsFieldNumber = 5,
   };
   // repeated string arguments = 3;
   [[nodiscard]] int arguments_size()
@@ -1170,11 +1171,21 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED TaskAssignment final : public ::goo
   ::std::string* PROTOBUF_NONNULL _internal_mutable_attempt_id();
 
   public:
+  // uint32 timeout_seconds = 5;
+  void clear_timeout_seconds() ;
+  [[nodiscard]] ::uint32_t timeout_seconds() const;
+  void set_timeout_seconds(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_timeout_seconds() const;
+  void _internal_set_timeout_seconds(::uint32_t value);
+
+  public:
   // @@protoc_insertion_point(class_scope:forge.v1.TaskAssignment)
  private:
   class _Internal;
   using ParseTableT_ =
-      ::google::protobuf::internal::TcParseTable<2, 4,
+      ::google::protobuf::internal::TcParseTable<3, 5,
                           0, 65,
                           2>;
   static constexpr ParseTableT_ InternalGenerateParseTable_(
@@ -1207,6 +1218,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED TaskAssignment final : public ::goo
     ::google::protobuf::internal::ArenaStringPtr task_id_;
     ::google::protobuf::internal::ArenaStringPtr command_;
     ::google::protobuf::internal::ArenaStringPtr attempt_id_;
+    ::uint32_t timeout_seconds_;
     PROTOBUF_TSAN_DECLARE_MEMBER
   };
   union { Impl_ _impl_; };
@@ -3979,6 +3991,30 @@ inline void TaskAssignment::set_allocated_attempt_id(::std::string* PROTOBUF_NUL
     _impl_.attempt_id_.Set("", GetArena());
   }
   // @@protoc_insertion_point(field_set_allocated:forge.v1.TaskAssignment.attempt_id)
+}
+
+// uint32 timeout_seconds = 5;
+inline void TaskAssignment::clear_timeout_seconds() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.timeout_seconds_ = 0u;
+  ClearHasBit(_impl_._has_bits_[0], 0x00000010U);
+}
+inline ::uint32_t TaskAssignment::timeout_seconds() const {
+  // @@protoc_insertion_point(field_get:forge.v1.TaskAssignment.timeout_seconds)
+  return _internal_timeout_seconds();
+}
+inline void TaskAssignment::set_timeout_seconds(::uint32_t value) {
+  _internal_set_timeout_seconds(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000010U);
+  // @@protoc_insertion_point(field_set:forge.v1.TaskAssignment.timeout_seconds)
+}
+inline ::uint32_t TaskAssignment::_internal_timeout_seconds() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.timeout_seconds_;
+}
+inline void TaskAssignment::_internal_set_timeout_seconds(::uint32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.timeout_seconds_ = value;
 }
 
 // -------------------------------------------------------------------

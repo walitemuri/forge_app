@@ -41,7 +41,8 @@ public class TaskService {
     public ForgeTask submitTask(
         String command,
         List<String> arguments,
-        int maxAttempts) {
+        int maxAttempts,
+        int timeoutSeconds) {
 
         String taskId =
                 UUID.randomUUID().toString();
@@ -49,11 +50,12 @@ public class TaskService {
 
         ForgeTask task =
                 taskRegistry.register(
-                        new ForgeTask(
+                       new ForgeTask(
                         taskId,
                         command,
                         arguments,
-                        maxAttempts
+                        maxAttempts,
+                        timeoutSeconds
                 )
         );
 
@@ -322,6 +324,9 @@ public class TaskService {
                         )
                         .addAllArguments(
                                 task.getArguments()
+                        )
+                        .setTimeoutSeconds(
+                                task.getTimeoutSeconds()
                         )
                         .build();
 

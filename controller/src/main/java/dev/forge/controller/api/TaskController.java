@@ -82,6 +82,19 @@ public class TaskController {
                     );
         }
 
+        int timeoutSeconds =
+                request.timeoutSeconds() == null
+                        ? 0
+                        : request.timeoutSeconds();
+
+        if (timeoutSeconds < 1 || timeoutSeconds > 300) {
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(
+                            "timeoutSeconds must be between 1 and 300"
+                    );
+        }
 
         try {
 
@@ -89,7 +102,8 @@ public class TaskController {
                     taskService.submitTask(
                     request.command(),
                     arguments,
-                    maxAttempts
+                    maxAttempts,
+                    timeoutSeconds
             );
 
 

@@ -8,6 +8,8 @@ import java.time.Instant;
 public record TaskResponse(
 
         String id,
+        
+        int timeoutSeconds,
 
         String command,
 
@@ -24,6 +26,7 @@ public record TaskResponse(
         String stdout,
 
         String stderr
+        
 
 ) {
 
@@ -33,6 +36,8 @@ public record TaskResponse(
         return new TaskResponse(
 
                 task.getId(),
+
+                task.getTimeoutSeconds(),
 
                 task.getCommand(),
 
@@ -47,7 +52,7 @@ public record TaskResponse(
                 task.getExitCode(),
 
                 task.getStdout(),
-
+                
                 task.getStderr()
         );
     }
