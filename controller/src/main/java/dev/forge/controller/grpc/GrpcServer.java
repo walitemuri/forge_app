@@ -1,5 +1,7 @@
 package dev.forge.controller.grpc;
 
+import dev.forge.controller.task.TaskRecoveryService;
+
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 
@@ -15,7 +17,12 @@ import java.io.IOException;
 @Component
 public class GrpcServer {
 
-    private final ForgeControllerService forgeControllerService;
+    private final ForgeControllerService
+            forgeControllerService;
+
+    private final TaskRecoveryService
+            taskRecoveryService;
+
     private final int port;
 
     private Server server;
@@ -23,10 +30,14 @@ public class GrpcServer {
 
     public GrpcServer(
             ForgeControllerService forgeControllerService,
+            TaskRecoveryService taskRecoveryService,
             @Value("${forge.grpc.port:50051}") int port) {
 
         this.forgeControllerService =
                 forgeControllerService;
+
+        this.taskRecoveryService =
+                taskRecoveryService;
 
         this.port =
                 port;
@@ -35,6 +46,14 @@ public class GrpcServer {
 
     @PostConstruct
     public void start() throws IOException {
+
+        /*
+         * Resolve persisted tasks left in an in-flight state
+         * before accepting new worker connections.
+         */
+        taskRecoveryService
+                .recoverInterruptedTasks();
+
 
         server =
                 ServerBuilder
@@ -59,6 +78,7 @@ public class GrpcServer {
     public void stop() {
 
         if (server != null) {
+
             server.shutdown();
         }
     }

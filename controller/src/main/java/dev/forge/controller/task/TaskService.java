@@ -15,15 +15,26 @@ import java.util.UUID;
 public class TaskService {
 
     private final TaskRegistry taskRegistry;
+
+    private final TaskAttemptRegistry
+            taskAttemptRegistry;
+
     private final TaskScheduler taskScheduler;
 
 
     public TaskService(
             TaskRegistry taskRegistry,
+            TaskAttemptRegistry taskAttemptRegistry,
             TaskScheduler taskScheduler) {
 
-        this.taskRegistry = taskRegistry;
-        this.taskScheduler = taskScheduler;
+        this.taskRegistry =
+                taskRegistry;
+
+        this.taskAttemptRegistry =
+                taskAttemptRegistry;
+
+        this.taskScheduler =
+                taskScheduler;
     }
 
 
@@ -36,19 +47,39 @@ public class TaskService {
 
 
         ForgeTask task =
-                new ForgeTask(
-                        taskId,
-                        command,
-                        arguments
+                taskRegistry.register(
+                        new ForgeTask(
+                                taskId,
+                                command,
+                                arguments
+                        )
                 );
 
 
-        taskRegistry.register(task);
+        /*
+         * For now every logical task begins with
+         * exactly one physical attempt.
+         */
+        String attemptId =
+                UUID.randomUUID().toString();
+
+
+        TaskAttempt attempt =
+                new TaskAttempt(
+                        attemptId,
+                        taskId,
+                        1
+                );
+
+
+        attempt =
+                taskAttemptRegistry.save(
+                        attempt
+                );
 
 
         /*
-         * Worker selection AND reservation now happen
-         * atomically inside TaskScheduler.
+         * Choose worker and reserve capacity.
          */
         WorkerState worker =
                 taskScheduler
@@ -61,12 +92,52 @@ public class TaskService {
                         );
 
 
+        /*
+         * Persist ownership BEFORE gRPC send.
+         *
+         * This avoids the race we encountered earlier
+         * where the worker could reply before PostgreSQL
+         * knew which worker owned the execution.
+         */
+        task.setWorkerId(
+                worker.getWorkerId()
+        );
+
+        task.setStatus(
+                TaskStatus.DISPATCHED
+        );
+
+        task =
+                taskRegistry.save(
+                        task
+                );
+
+
+        attempt.markDispatched(
+                worker.getWorkerId()
+        );
+
+        attempt =
+                taskAttemptRegistry.save(
+                        attempt
+                );
+
+
         TaskAssignment assignment =
                 TaskAssignment
                         .newBuilder()
-                        .setTaskId(taskId)
-                        .setCommand(command)
-                        .addAllArguments(arguments)
+                        .setTaskId(
+                                taskId
+                        )
+                        .setAttemptId(
+                                attemptId
+                        )
+                        .setCommand(
+                                command
+                        )
+                        .addAllArguments(
+                                arguments
+                        )
                         .build();
 
 
@@ -80,16 +151,34 @@ public class TaskService {
 
 
         boolean sent =
-                worker.sendCommand(message);
+                worker.sendCommand(
+                        message
+                );
 
 
         if (!sent) {
 
-            /*
-             * Scheduler already reserved the worker.
-             * Undo that reservation if dispatch fails.
-             */
             worker.releaseTask();
+
+
+            attempt.failBeforeStart(
+                    "Failed to dispatch task to worker "
+                            + worker.getWorkerId()
+            );
+
+            taskAttemptRegistry.save(
+                    attempt
+            );
+
+
+            task.setStatus(
+                    TaskStatus.FAILED
+            );
+
+            taskRegistry.save(
+                    task
+            );
+
 
             throw new IllegalStateException(
                     "Failed to dispatch task to worker "
@@ -98,28 +187,23 @@ public class TaskService {
         }
 
 
-        task.setWorkerId(
-                worker.getWorkerId()
-        );
-
-        task.setStatus(
-                TaskStatus.DISPATCHED
-        );
-        
-        taskRegistry.save(task);
-
         System.out.println();
         System.out.println(
                 "=== TASK DISPATCHED ==="
         );
 
         System.out.println(
-                "Task:   "
+                "Task:    "
                         + taskId
         );
 
         System.out.println(
-                "Worker: "
+                "Attempt: "
+                        + attemptId
+        );
+
+        System.out.println(
+                "Worker:  "
                         + worker.getWorkerId()
         );
 

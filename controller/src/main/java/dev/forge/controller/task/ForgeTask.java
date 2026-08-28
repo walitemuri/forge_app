@@ -143,7 +143,11 @@ public class ForgeTask {
         this.status =
                 TaskStatus.RUNNING;
     }
+    public void markLost() {
 
+    this.status =
+            TaskStatus.LOST;
+    }
 
     public void complete(
             boolean success,

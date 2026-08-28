@@ -357,7 +357,16 @@ int main(int argc, char* argv[]) {
         // Task started callback.
         [sendWorkerMessage](const forge::v1::TaskAssignment& task) {
             forge::v1::WorkerMessage message;
-            message.mutable_task_accepted()->set_task_id(task.task_id());
+            auto* accepted =
+            message.mutable_task_accepted();
+
+            accepted->set_task_id(
+                task.task_id()
+            );
+
+            accepted->set_attempt_id(
+                task.attempt_id()
+            );
 
             if (!sendWorkerMessage(message)) {
                 std::cerr << "Failed to send task acceptance for "
@@ -396,11 +405,29 @@ int main(int argc, char* argv[]) {
             forge::v1::WorkerMessage message;
             auto* taskResult = message.mutable_task_result();
 
-            taskResult->set_task_id(task.task_id());
-            taskResult->set_exit_code(result.exitCode);
-            taskResult->set_stdout(result.stdoutOutput);
-            taskResult->set_stderr(result.stderrOutput);
-            taskResult->set_success(result.exitCode == 0);
+            taskResult->set_task_id(
+                task.task_id()
+            );
+
+            taskResult->set_attempt_id(
+                task.attempt_id()
+            );
+
+            taskResult->set_exit_code(
+                result.exitCode
+            );
+
+            taskResult->set_stdout(
+                result.stdoutOutput
+            );
+
+            taskResult->set_stderr(
+                result.stderrOutput
+            );
+
+            taskResult->set_success(
+                result.exitCode == 0
+            );
 
             if (!sendWorkerMessage(message)) {
                 std::cerr << "Failed to send task result for "

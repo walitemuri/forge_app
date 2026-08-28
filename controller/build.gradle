@@ -28,7 +28,9 @@ dependencies {
     implementation enforcedPlatform("io.grpc:grpc-bom:${grpcVersion}")
     implementation 'io.grpc:grpc-protobuf'
     implementation 'io.grpc:grpc-stub'
-
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    
+    runtimeOnly 'org.flywaydb:flyway-database-postgresql'
     runtimeOnly 'io.grpc:grpc-netty-shaded'
     runtimeOnly 'org.postgresql:postgresql'
 

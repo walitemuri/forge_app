@@ -2,6 +2,7 @@ package dev.forge.controller.task;
 
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
 import java.util.List;
 
 
@@ -33,6 +34,13 @@ public class TaskRegistry {
     }
 
 
+    public List<ForgeTask> saveAll(
+            Collection<ForgeTask> tasks) {
+
+        return repository.saveAll(tasks);
+    }
+
+
     public ForgeTask get(
             String taskId) {
 
@@ -45,5 +53,14 @@ public class TaskRegistry {
     public List<ForgeTask> getAll() {
 
         return repository.findAll();
+    }
+
+
+    public List<ForgeTask> getByStatuses(
+            Collection<TaskStatus> statuses) {
+
+        return repository.findByStatusIn(
+                statuses
+        );
     }
 }

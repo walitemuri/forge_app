@@ -5,8 +5,13 @@ project(forge_worker LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Protobuf REQUIRED)
+
+# Use Homebrew package configs consistently.
+# Mixing CMake's FindProtobuf module with gRPC's
+# config-mode Protobuf dependency causes duplicate targets.
+find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
+
 
 add_executable(
     forge-worker
@@ -19,11 +24,13 @@ add_executable(
     generated/forge.grpc.pb.cc
 )
 
+
 target_include_directories(
     forge-worker
     PRIVATE
     generated
 )
+
 
 target_link_libraries(
     forge-worker

@@ -1,7 +1,7 @@
 package dev.forge.controller.task;
 
 
-public enum TaskStatus {
+public enum TaskAttemptStatus {
 
     CREATED,
 
