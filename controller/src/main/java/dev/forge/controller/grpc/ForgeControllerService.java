@@ -206,16 +206,55 @@ public class ForgeControllerService extends ForgeControllerGrpc.ForgeControllerI
 
                         if (!attempt.getTaskId().equals(taskId)) {
 
-                                System.err.println(
-                                        "Attempt/task mismatch: attempt="
-                                                + attemptId
-                                                + " task="
-                                                + taskId
-                                );
+                                        System.err.println(
+                                                "Attempt/task mismatch: attempt="
+                                                        + attemptId
+                                                        + " task="
+                                                        + taskId
+                                        );
+                                        return;
+                        }
+                        TaskAttempt latestAttempt =
+                                taskAttemptRegistry
+                                        .getLatestForTask(
+                                                taskId
+                                        );
 
-                                return;
+
+                        if (latestAttempt == null
+                                || !latestAttempt
+                                        .getId()
+                                        .equals(attemptId)) {
+
+                        System.err.println(
+                                "Ignoring stale TaskAccepted: task="
+                                        + taskId
+                                        + " attempt="
+                                        + attemptId
+                        );
+
+                        return;
                         }
 
+
+                        if (connectedWorkerId == null
+                                || !connectedWorkerId.equals(
+                                        attempt.getWorkerId()
+                                )) {
+
+                        System.err.println(
+                                "Ignoring TaskAccepted from wrong worker: task="
+                                        + taskId
+                                        + " attempt="
+                                        + attemptId
+                                        + " expectedWorker="
+                                        + attempt.getWorkerId()
+                                        + " actualWorker="
+                                        + connectedWorkerId
+                        );
+
+                        return;
+                        }
 
                         attempt.markRunning();
 
@@ -300,7 +339,47 @@ public class ForgeControllerService extends ForgeControllerGrpc.ForgeControllerI
 
                                 return;
                         }
+                        TaskAttempt latestAttempt =
+                                taskAttemptRegistry
+                                        .getLatestForTask(
+                                                taskId
+                                        );
 
+
+                        if (latestAttempt == null
+                                || !latestAttempt
+                                        .getId()
+                                        .equals(attemptId)) {
+
+                        System.err.println(
+                                "Ignoring stale TaskResult: task="
+                                        + taskId
+                                        + " attempt="
+                                        + attemptId
+                        );
+
+                        return;
+                        }
+
+
+                        if (connectedWorkerId == null
+                                || !connectedWorkerId.equals(
+                                        attempt.getWorkerId()
+                                )) {
+
+                        System.err.println(
+                                "Ignoring TaskResult from wrong worker: task="
+                                        + taskId
+                                        + " attempt="
+                                        + attemptId
+                                        + " expectedWorker="
+                                        + attempt.getWorkerId()
+                                        + " actualWorker="
+                                        + connectedWorkerId
+                        );
+
+                        return;
+                        }
 
                         WorkerState worker =
                                 WorkerRegistry.get(

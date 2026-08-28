@@ -56,30 +56,111 @@ public class TaskService {
                 );
 
 
+        dispatchAttempt(
+                task,
+                1
+        );
+
+
         /*
-         * For now every logical task begins with
-         * exactly one physical attempt.
+         * The worker may already have replied by now,
+         * so return the latest database state.
          */
-        String attemptId =
-                UUID.randomUUID().toString();
+        return taskRegistry.get(
+                taskId
+        );
+    }
 
 
-        TaskAttempt attempt =
-                new TaskAttempt(
-                        attemptId,
-                        taskId,
-                        1
+    /*
+     * Manual retry only.
+     *
+     * Automatic retries come later.
+     */
+    public synchronized ForgeTask retryTask(
+            String taskId) {
+
+        ForgeTask task =
+                taskRegistry.get(
+                        taskId
                 );
 
 
-        attempt =
-                taskAttemptRegistry.save(
-                        attempt
-                );
+        if (task == null) {
+            return null;
+        }
 
+
+        if (task.getStatus() != TaskStatus.LOST
+                && task.getStatus() != TaskStatus.FAILED) {
+
+            throw new IllegalArgumentException(
+                    "Task "
+                            + taskId
+                            + " cannot be retried from status "
+                            + task.getStatus()
+            );
+        }
+
+
+        TaskAttempt latestAttempt =
+                taskAttemptRegistry
+                        .getLatestForTask(
+                                taskId
+                        );
+
+
+        if (latestAttempt == null) {
+
+            throw new IllegalStateException(
+                    "Task "
+                            + taskId
+                            + " has no execution attempts"
+            );
+        }
+
+
+        if (latestAttempt.getStatus()
+                != TaskAttemptStatus.LOST
+                && latestAttempt.getStatus()
+                != TaskAttemptStatus.FAILED) {
+
+            throw new IllegalArgumentException(
+                    "Latest attempt "
+                            + latestAttempt.getId()
+                            + " is not retryable from status "
+                            + latestAttempt.getStatus()
+            );
+        }
+
+
+        int nextAttemptNumber =
+                latestAttempt
+                        .getAttemptNumber()
+                        + 1;
+
+
+        dispatchAttempt(
+                task,
+                nextAttemptNumber
+        );
+
+
+        return taskRegistry.get(
+                taskId
+        );
+    }
+
+
+    private void dispatchAttempt(
+            ForgeTask task,
+            int attemptNumber) {
 
         /*
-         * Choose worker and reserve capacity.
+         * Reserve capacity before creating the attempt.
+         *
+         * If no worker exists, we don't create a useless
+         * CREATED attempt.
          */
         WorkerState worker =
                 taskScheduler
@@ -92,12 +173,26 @@ public class TaskService {
                         );
 
 
+        String attemptId =
+                UUID.randomUUID().toString();
+
+
+        TaskAttempt attempt =
+                new TaskAttempt(
+                        attemptId,
+                        task.getId(),
+                        attemptNumber
+                );
+
+
+        attempt =
+                taskAttemptRegistry.save(
+                        attempt
+                );
+
+
         /*
-         * Persist ownership BEFORE gRPC send.
-         *
-         * This avoids the race we encountered earlier
-         * where the worker could reply before PostgreSQL
-         * knew which worker owned the execution.
+         * Persist ownership before sending over gRPC.
          */
         task.setWorkerId(
                 worker.getWorkerId()
@@ -107,10 +202,9 @@ public class TaskService {
                 TaskStatus.DISPATCHED
         );
 
-        task =
-                taskRegistry.save(
-                        task
-                );
+        taskRegistry.save(
+                task
+        );
 
 
         attempt.markDispatched(
@@ -127,16 +221,16 @@ public class TaskService {
                 TaskAssignment
                         .newBuilder()
                         .setTaskId(
-                                taskId
+                                task.getId()
                         )
                         .setAttemptId(
                                 attemptId
                         )
                         .setCommand(
-                                command
+                                task.getCommand()
                         )
                         .addAllArguments(
-                                arguments
+                                task.getArguments()
                         )
                         .build();
 
@@ -181,7 +275,9 @@ public class TaskService {
 
 
             throw new IllegalStateException(
-                    "Failed to dispatch task to worker "
+                    "Failed to dispatch attempt "
+                            + attemptNumber
+                            + " to worker "
                             + worker.getWorkerId()
             );
         }
@@ -194,12 +290,17 @@ public class TaskService {
 
         System.out.println(
                 "Task:    "
-                        + taskId
+                        + task.getId()
         );
 
         System.out.println(
                 "Attempt: "
                         + attemptId
+        );
+
+        System.out.println(
+                "Attempt number: "
+                        + attemptNumber
         );
 
         System.out.println(
@@ -209,7 +310,7 @@ public class TaskService {
 
         System.out.println(
                 "Command: "
-                        + command
+                        + task.getCommand()
         );
 
         System.out.println(
@@ -227,9 +328,6 @@ public class TaskService {
         );
 
         System.out.println();
-
-
-        return task;
     }
 
 

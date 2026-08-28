@@ -1,6 +1,8 @@
 package dev.forge.controller.api;
 
 import dev.forge.controller.task.ForgeTask;
+import dev.forge.controller.task.TaskAttempt;
+import dev.forge.controller.task.TaskAttemptRegistry;
 import dev.forge.controller.task.TaskRegistry;
 import dev.forge.controller.task.TaskService;
 
@@ -13,7 +15,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import dev.forge.controller.task.TaskRegistry;
 
 import java.util.List;
 
@@ -23,19 +24,28 @@ import java.util.List;
 public class TaskController {
 
     private final TaskService taskService;
+
     private final TaskRegistry taskRegistry;
+
+    private final TaskAttemptRegistry
+            taskAttemptRegistry;
 
 
     public TaskController(
-        TaskService taskService,
-        TaskRegistry taskRegistry) {
+            TaskService taskService,
+            TaskRegistry taskRegistry,
+            TaskAttemptRegistry taskAttemptRegistry) {
 
-    this.taskService =
-            taskService;
+        this.taskService =
+                taskService;
 
-    this.taskRegistry =
-            taskRegistry;
+        this.taskRegistry =
+                taskRegistry;
+
+        this.taskAttemptRegistry =
+                taskAttemptRegistry;
     }
+
 
     @PostMapping
     public ResponseEntity<?> submitTask(
@@ -47,7 +57,7 @@ public class TaskController {
             return ResponseEntity
                     .badRequest()
                     .body(
-                        "command must not be empty"
+                            "command must not be empty"
                     );
         }
 
@@ -70,7 +80,7 @@ public class TaskController {
             return ResponseEntity
                     .accepted()
                     .body(
-                        TaskResponse.from(task)
+                            TaskResponse.from(task)
                     );
         }
 
@@ -78,10 +88,61 @@ public class TaskController {
 
             return ResponseEntity
                     .status(
-                        HttpStatus.SERVICE_UNAVAILABLE
+                            HttpStatus.SERVICE_UNAVAILABLE
                     )
                     .body(
-                        exception.getMessage()
+                            exception.getMessage()
+                    );
+        }
+    }
+
+
+    @PostMapping("/{taskId}/retry")
+    public ResponseEntity<?> retryTask(
+            @PathVariable String taskId) {
+
+        try {
+
+            ForgeTask task =
+                    taskService.retryTask(
+                            taskId
+                    );
+
+
+            if (task == null) {
+
+                return ResponseEntity
+                        .notFound()
+                        .build();
+            }
+
+
+            return ResponseEntity
+                    .accepted()
+                    .body(
+                            TaskResponse.from(task)
+                    );
+        }
+
+        catch (IllegalArgumentException exception) {
+
+            return ResponseEntity
+                    .status(
+                            HttpStatus.CONFLICT
+                    )
+                    .body(
+                            exception.getMessage()
+                    );
+        }
+
+        catch (IllegalStateException exception) {
+
+            return ResponseEntity
+                    .status(
+                            HttpStatus.SERVICE_UNAVAILABLE
+                    )
+                    .body(
+                            exception.getMessage()
                     );
         }
     }
@@ -92,7 +153,9 @@ public class TaskController {
             @PathVariable String taskId) {
 
         ForgeTask task =
-                taskService.getTask(taskId);
+                taskService.getTask(
+                        taskId
+                );
 
 
         if (task == null) {
@@ -107,16 +170,52 @@ public class TaskController {
                 TaskResponse.from(task)
         );
     }
+
+
+    @GetMapping("/{taskId}/attempts")
+    public ResponseEntity<List<TaskAttempt>>
+            getTaskAttempts(
+                    @PathVariable String taskId) {
+
+        ForgeTask task =
+                taskService.getTask(
+                        taskId
+                );
+
+
+        if (task == null) {
+
+            return ResponseEntity
+                    .notFound()
+                    .build();
+        }
+
+
+        return ResponseEntity.ok(
+                taskAttemptRegistry
+                        .getForTask(
+                                taskId
+                        )
+        );
+    }
+
+
     @GetMapping
-    public ResponseEntity<List<TaskResponse>> getTasks() {
+    public ResponseEntity<List<TaskResponse>>
+            getTasks() {
 
         List<TaskResponse> tasks =
                 taskRegistry
                         .getAll()
                         .stream()
-                        .map(TaskResponse::from)
+                        .map(
+                                TaskResponse::from
+                        )
                         .toList();
 
-        return ResponseEntity.ok(tasks);
+
+        return ResponseEntity.ok(
+                tasks
+        );
     }
 }

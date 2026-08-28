@@ -64,4 +64,19 @@ public class TaskAttemptRegistry {
                 statuses
         );
     }
+
+    public TaskAttempt getLatestForTask(
+        String taskId) {
+
+        List<TaskAttempt> attempts =
+                getForTask(taskId);
+
+        if (attempts.isEmpty()) {
+                return null;
+        }
+
+        return attempts.get(
+                attempts.size() - 1
+        );
+    }
 }
