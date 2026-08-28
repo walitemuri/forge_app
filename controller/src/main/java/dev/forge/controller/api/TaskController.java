@@ -66,15 +66,31 @@ public class TaskController {
                 request.arguments() == null
                         ? List.of()
                         : request.arguments();
+        int maxAttempts =
+        request.maxAttempts() == null
+                ? 1
+                : request.maxAttempts();
+
+
+        if (maxAttempts < 1
+                || maxAttempts > 10) {
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(
+                            "maxAttempts must be between 1 and 10"
+                    );
+        }
 
 
         try {
 
             ForgeTask task =
                     taskService.submitTask(
-                            request.command(),
-                            arguments
-                    );
+                    request.command(),
+                    arguments,
+                    maxAttempts
+            );
 
 
             return ResponseEntity

@@ -9,7 +9,6 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
@@ -47,13 +46,17 @@ public class ForgeTask {
 
     private Integer exitCode;
 
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String stdout;
 
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String stderr;
 
-
+    @Column(
+        name = "max_attempts",
+        nullable = false
+    )
+    private int maxAttempts;
     /*
      * Required by JPA.
      */
@@ -62,12 +65,16 @@ public class ForgeTask {
 
 
     public ForgeTask(
-            String id,
-            String command,
-            List<String> arguments) {
-
+        String id,
+        String command,
+        List<String> arguments,
+        int maxAttempts)  {
+        
+            this.maxAttempts =
+        maxAttempts; 
         this.id = id;
         this.command = command;
+        this.maxAttempts = maxAttempts;
 
         this.arguments =
                 new ArrayList<>(arguments);
@@ -78,7 +85,9 @@ public class ForgeTask {
         this.status =
                 TaskStatus.CREATED;
     }
-
+    public int getMaxAttempts() {
+        return maxAttempts;
+    }
 
     public String getId() {
         return id;
@@ -163,5 +172,28 @@ public class ForgeTask {
                 success
                         ? TaskStatus.SUCCEEDED
                         : TaskStatus.FAILED;
+    }
+    public void markDispatched(
+        String workerId) {
+
+        this.workerId =
+                workerId;
+
+        this.status =
+                TaskStatus.DISPATCHED;
+
+        /*
+        * A retry represents a new physical execution.
+        * Don't expose the previous attempt's result
+        * as if it belonged to the new one.
+        */
+        this.exitCode =
+                null;
+
+        this.stdout =
+                null;
+
+        this.stderr =
+                null;
     }
 }

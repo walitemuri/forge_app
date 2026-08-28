@@ -39,8 +39,9 @@ public class TaskService {
 
 
     public ForgeTask submitTask(
-            String command,
-            List<String> arguments) {
+        String command,
+        List<String> arguments,
+        int maxAttempts) {
 
         String taskId =
                 UUID.randomUUID().toString();
@@ -49,11 +50,12 @@ public class TaskService {
         ForgeTask task =
                 taskRegistry.register(
                         new ForgeTask(
-                                taskId,
-                                command,
-                                arguments
-                        )
-                );
+                        taskId,
+                        command,
+                        arguments,
+                        maxAttempts
+                )
+        );
 
 
         dispatchAttempt(
@@ -71,7 +73,100 @@ public class TaskService {
         );
     }
 
+    public synchronized boolean
+        retryAutomatically(
+                String taskId) {
 
+        ForgeTask task =
+                taskRegistry.get(
+                        taskId
+                );
+
+
+        if (task == null) {
+                return false;
+        }
+
+
+        if (task.getStatus() != TaskStatus.LOST
+                && task.getStatus() != TaskStatus.FAILED) {
+
+                return false;
+        }
+
+
+        TaskAttempt latestAttempt =
+                taskAttemptRegistry
+                        .getLatestForTask(
+                                taskId
+                        );
+
+
+        if (latestAttempt == null) {
+                return false;
+        }
+
+
+        /*
+        * maxAttempts is the TOTAL number of executions,
+        * not the number of retries.
+        *
+        * maxAttempts=3:
+        * Attempt 1
+        * Attempt 2
+        * Attempt 3
+        */
+        if (latestAttempt.getAttemptNumber()
+                >= task.getMaxAttempts()) {
+
+                return false;
+        }
+
+
+        int nextAttemptNumber =
+                latestAttempt
+                        .getAttemptNumber()
+                        + 1;
+
+
+        try {
+
+                dispatchAttempt(
+                        task,
+                        nextAttemptNumber
+                );
+
+                System.out.println(
+                        "↻ AUTOMATIC RETRY: task="
+                                + taskId
+                                + " attempt="
+                                + nextAttemptNumber
+                                + "/"
+                                + task.getMaxAttempts()
+                );
+
+
+                return true;
+        }
+
+        catch (IllegalStateException exception) {
+
+                /*
+                * Typically means there is no connected worker.
+                * Leave the task LOST/FAILED. The retry
+                * coordinator can try again later.
+                */
+                System.out.println(
+                        "Automatic retry deferred: task="
+                                + taskId
+                                + " reason="
+                                + exception.getMessage()
+                );
+
+
+        return false;
+    }
+}
     /*
      * Manual retry only.
      *
@@ -194,12 +289,8 @@ public class TaskService {
         /*
          * Persist ownership before sending over gRPC.
          */
-        task.setWorkerId(
+        task.markDispatched(
                 worker.getWorkerId()
-        );
-
-        task.setStatus(
-                TaskStatus.DISPATCHED
         );
 
         taskRegistry.save(

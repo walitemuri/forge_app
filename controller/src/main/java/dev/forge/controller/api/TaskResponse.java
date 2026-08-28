@@ -17,6 +17,8 @@ public record TaskResponse(
 
         Instant createdAt,
 
+        int maxAttempts,
+
         Integer exitCode,
 
         String stdout,
@@ -30,21 +32,23 @@ public record TaskResponse(
 
         return new TaskResponse(
 
-            task.getId(),
+                task.getId(),
 
-            task.getCommand(),
+                task.getCommand(),
 
-            task.getStatus().name(),
+                task.getStatus().name(),
 
-            task.getWorkerId(),
+                task.getWorkerId(),
 
-            task.getCreatedAt(),
+                task.getCreatedAt(),
 
-            task.getExitCode(),
+                task.getMaxAttempts(),
 
-            task.getStdout(),
+                task.getExitCode(),
 
-            task.getStderr()
+                task.getStdout(),
+
+                task.getStderr()
         );
     }
 }
