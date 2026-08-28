@@ -18,4 +18,10 @@ public interface TaskAttemptRepository
     List<TaskAttempt> findByStatusIn(
             Collection<TaskAttemptStatus> statuses
     );
+
+
+    List<TaskAttempt> findByWorkerIdAndStatusIn(
+            String workerId,
+            Collection<TaskAttemptStatus> statuses
+    );
 }

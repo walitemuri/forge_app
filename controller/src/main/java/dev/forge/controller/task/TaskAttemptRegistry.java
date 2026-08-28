@@ -79,4 +79,17 @@ public class TaskAttemptRegistry {
                 attempts.size() - 1
         );
     }
+    public List<TaskAttempt> getActiveForWorker(
+        String workerId) {
+
+        return repository
+                .findByWorkerIdAndStatusIn(
+                        workerId,
+                        java.util.EnumSet.of(
+                                TaskAttemptStatus.CREATED,
+                                TaskAttemptStatus.DISPATCHED,
+                                TaskAttemptStatus.RUNNING
+                        )
+                );
+        }
 }
