@@ -2,6 +2,7 @@ package dev.forge.controller.task;
 
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
 import java.util.List;
 
 
@@ -28,6 +29,15 @@ public class TaskAttemptRegistry {
     }
 
 
+    public List<TaskAttempt> saveAll(
+            Collection<TaskAttempt> attempts) {
+
+        return repository.saveAll(
+                attempts
+        );
+    }
+
+
     public TaskAttempt get(
             String attemptId) {
 
@@ -45,5 +55,13 @@ public class TaskAttemptRegistry {
                         taskId
                 );
     }
-}
 
+
+    public List<TaskAttempt> getByStatuses(
+            Collection<TaskAttemptStatus> statuses) {
+
+        return repository.findByStatusIn(
+                statuses
+        );
+    }
+}

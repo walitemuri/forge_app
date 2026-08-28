@@ -385,19 +385,24 @@ public class ForgeControllerService extends ForgeControllerGrpc.ForgeControllerI
                                 result.getStdout()
                         );
 
-                        System.out.println(
+                       System.out.println(
                                 "====================="
                         );
 
                         System.out.println();
                         }
 
-            // ====================================================
-            // Worker stream error
-            // ====================================================
+                        /*
+                        * End of onNext(...)
+                        */
+}
 
-            @Override
-            public void onError(Throwable throwable) {
+                        // ====================================================
+                        // Worker stream error
+                        // ====================================================
+
+                @Override
+                public void onError(Throwable throwable) {
                 System.err.println("Worker stream error: " + connectedWorkerId + " - " + throwable.getMessage());
 
                 if (connectedWorkerId != null) {
