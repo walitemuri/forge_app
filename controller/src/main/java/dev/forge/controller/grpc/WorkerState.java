@@ -246,4 +246,21 @@ public class WorkerState {
 
         return runningTasks;
     }
+    public int getTaskCapacity() {
+
+    return Math.max(
+            1,
+            Math.min(
+                    cpuCores,
+                    4
+            )
+        );
+    }
+
+
+    public boolean hasTaskCapacity() {
+
+        return getEffectiveLoad()
+                < getTaskCapacity();
+    }
 }

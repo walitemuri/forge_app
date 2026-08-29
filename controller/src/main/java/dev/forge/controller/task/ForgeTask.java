@@ -260,4 +260,12 @@ public class ForgeTask {
         this.status =
                 TaskStatus.CANCELLED;
     }
+    public void markPending() {
+
+        this.status =
+                TaskStatus.PENDING;
+
+        this.workerId =
+                null;
+    }
 }

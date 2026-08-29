@@ -34,6 +34,9 @@ public class TaskScheduler {
                         .filter(
                                 WorkerState::hasCommandStream
                         )
+                        .filter(
+                                WorkerState::hasTaskCapacity
+                        )
 
                         .min(
                                 Comparator

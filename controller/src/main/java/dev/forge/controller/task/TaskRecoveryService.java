@@ -13,11 +13,10 @@ public class TaskRecoveryService {
 
     private static final Set<TaskStatus>
             INTERRUPTED_TASK_STATUSES =
-            EnumSet.of(
-                    TaskStatus.CREATED,
-                    TaskStatus.DISPATCHED,
-                    TaskStatus.RUNNING
-            );
+                EnumSet.of(
+                TaskStatus.DISPATCHED,
+                TaskStatus.RUNNING
+             );
 
 
     private static final Set<TaskAttemptStatus>
@@ -49,6 +48,33 @@ public class TaskRecoveryService {
 
     @Transactional
     public void recoverInterruptedTasks() {
+        List<ForgeTask> createdTasks =
+        taskRegistry.getByStatuses(
+                EnumSet.of(
+                        TaskStatus.CREATED
+                )
+        );
+
+
+        for (ForgeTask task :
+                createdTasks) {
+
+        System.out.println(
+                "Recovering CREATED task as PENDING: "
+                        + task.getId()
+        );
+
+
+        task.markPending();
+        }
+
+
+        if (!createdTasks.isEmpty()) {
+
+        taskRegistry.saveAll(
+                createdTasks
+        );
+        }
 
         List<TaskAttempt> interruptedAttempts =
                 taskAttemptRegistry.getByStatuses(

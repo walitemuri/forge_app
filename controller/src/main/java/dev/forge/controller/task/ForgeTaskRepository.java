@@ -12,4 +12,10 @@ public interface ForgeTaskRepository
     List<ForgeTask> findByStatusIn(
             Collection<TaskStatus> statuses
     );
+
+
+    List<ForgeTask>
+    findByStatusOrderByCreatedAtAsc(
+            TaskStatus status
+    );
 }

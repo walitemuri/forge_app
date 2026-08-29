@@ -87,12 +87,13 @@ public class TaskController {
                         ? 0
                         : request.timeoutSeconds();
 
-        if (timeoutSeconds < 1 || timeoutSeconds > 300) {
+        if (timeoutSeconds < 0
+        || timeoutSeconds > 86400) {
 
             return ResponseEntity
                     .badRequest()
                     .body(
-                            "timeoutSeconds must be between 1 and 300"
+                            "timeoutSeconds must be between 0 and 86400"
                     );
         }
 

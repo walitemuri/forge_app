@@ -63,4 +63,13 @@ public class TaskRegistry {
                 statuses
         );
     }
+    public List<ForgeTask>
+        getByStatusOrdered(
+                TaskStatus status) {
+
+            return repository
+                    .findByStatusOrderByCreatedAtAsc(
+                            status
+                    );
+        }
 }

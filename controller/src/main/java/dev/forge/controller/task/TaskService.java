@@ -47,36 +47,46 @@ public class TaskService {
         int timeoutSeconds) {
 
         String taskId =
-                UUID.randomUUID().toString();
+                UUID.randomUUID()
+                        .toString();
 
 
         ForgeTask task =
-                taskRegistry.register(
-                       new ForgeTask(
+                new ForgeTask(
                         taskId,
                         command,
                         arguments,
                         maxAttempts,
                         timeoutSeconds
-                )
-        );
-
-
-        dispatchAttempt(
-                task,
-                1
-        );
+                );
 
 
         /*
-         * The worker may already have replied by now,
-         * so return the latest database state.
-         */
-        return taskRegistry.get(
-                taskId
-        );
-    }
+        * Submission and execution are now separate.
+        *
+        * POST /tasks means:
+        * "durably accept this work"
+        *
+        * not:
+        * "a worker must be available right now"
+        */
+        task.markPending();
 
+
+        task =
+                taskRegistry.register(
+                        task
+                );
+
+
+        System.out.println(
+                "＋ TASK QUEUED: "
+                        + taskId
+        );
+
+
+        return task;
+        }
     public synchronized boolean
         retryAutomatically(
                 String taskId) {
@@ -446,7 +456,63 @@ public class TaskService {
 
         System.out.println();
     }
+    public synchronized boolean
+        tryDispatchPendingTask(
+                String taskId) {
 
+        ForgeTask task =
+                taskRegistry.get(
+                        taskId
+                );
+
+
+        /*
+        * It may have been cancelled or changed
+        * since the coordinator read the queue.
+        */
+        if (task == null
+                || task.getStatus()
+                != TaskStatus.PENDING) {
+
+                return true;
+        }
+
+
+        if (task.isCancelRequested()) {
+
+                return true;
+        }
+
+
+        try {
+
+                dispatchAttempt(
+                        task,
+                        1
+                );
+
+
+                return true;
+        }
+        catch (IllegalStateException exception) {
+
+                /*
+                * Most commonly:
+                * no worker currently has capacity.
+                *
+                * Leave the task PENDING.
+                */
+                System.out.println(
+                        "Pending dispatch deferred: task="
+                                + taskId
+                                + " reason="
+                                + exception.getMessage()
+                );
+
+
+                return false;
+        }
+    }
     public synchronized ForgeTask cancelTask(
                 String taskId) {
 
@@ -470,7 +536,29 @@ public class TaskService {
 
                 return task;
         }
+        if (task.getStatus()
+        == TaskStatus.PENDING) {
 
+                task.requestCancellation();
+
+                task.markCancelled();
+
+
+                taskRegistry.save(
+                        task
+                );
+
+
+                System.out.println(
+                        "■ PENDING TASK CANCELLED: "
+                                + taskId
+                );
+
+
+                return taskRegistry.get(
+                        taskId
+                        );
+        }
 
         if (task.getStatus()
                 != TaskStatus.DISPATCHED

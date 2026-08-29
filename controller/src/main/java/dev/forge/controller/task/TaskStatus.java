@@ -5,6 +5,8 @@ public enum TaskStatus {
 
     CREATED,
 
+    PENDING,
+
     DISPATCHED,
 
     RUNNING,
