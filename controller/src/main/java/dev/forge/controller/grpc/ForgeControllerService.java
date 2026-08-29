@@ -396,6 +396,33 @@ public class ForgeControllerService extends ForgeControllerGrpc.ForgeControllerI
                         /*
                         * Finish the physical execution attempt.
                         */
+                       if (result.getCancelled()) {
+
+                        attempt.markCancelled(
+                                result.getExitCode(),
+                                result.getStdout(),
+                                result.getStderr()
+                        );
+
+
+                        taskAttemptRegistry.save(
+                                attempt
+                        );
+
+
+                        task.markCancelled(
+                                result.getExitCode(),
+                                result.getStdout(),
+                                result.getStderr()
+                        );
+
+
+                        taskRegistry.save(
+                                task
+                        );
+                        }
+                        else {
+
                         attempt.complete(
                                 result.getSuccess(),
                                 result.getExitCode(),
@@ -410,9 +437,13 @@ public class ForgeControllerService extends ForgeControllerGrpc.ForgeControllerI
 
 
                         /*
-                        * Attempt 1 is still the only attempt, so the
-                        * logical task mirrors its final result.
+                        * Cancellation may have raced with natural
+                        * completion. If the task completed first,
+                        * the actual completion wins.
                         */
+                        task.clearCancellationRequest();
+
+
                         task.complete(
                                 result.getSuccess(),
                                 result.getExitCode(),
@@ -424,7 +455,7 @@ public class ForgeControllerService extends ForgeControllerGrpc.ForgeControllerI
                         taskRegistry.save(
                                 task
                         );
-
+                        }
 
                         System.out.println();
                         System.out.println(

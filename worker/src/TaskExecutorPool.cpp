@@ -1,6 +1,7 @@
 #include "TaskExecutorPool.h"
 
 #include <exception>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -11,18 +12,26 @@ TaskExecutorPool::TaskExecutorPool(
         TaskCompletedCallback onTaskCompleted)
 
     : onTaskStarted_(
-        std::move(onTaskStarted)
+        std::move(
+            onTaskStarted
+        )
     ),
       onTaskCompleted_(
-        std::move(onTaskCompleted)
+        std::move(
+            onTaskCompleted
+        )
     ) {
 
     if (workerCount == 0) {
-        workerCount = 1;
+
+        workerCount =
+            1;
     }
 
 
-    workers_.reserve(workerCount);
+    workers_.reserve(
+        workerCount
+    );
 
 
     for (
@@ -46,16 +55,20 @@ TaskExecutorPool::~TaskExecutorPool() {
             queueMutex_
         );
 
-        stopping_ = true;
+
+        stopping_ =
+            true;
     }
 
 
     condition_.notify_all();
 
 
-    for (auto& worker : workers_) {
+    for (auto& worker :
+            workers_) {
 
         if (worker.joinable()) {
+
             worker.join();
         }
     }
@@ -65,18 +78,118 @@ TaskExecutorPool::~TaskExecutorPool() {
 void TaskExecutorPool::submit(
         Task task) {
 
+    auto cancellationFlag =
+        std::make_shared<
+            std::atomic<bool>
+        >(
+            false
+        );
+
+
+    /*
+     * Register before queueing so an immediate
+     * CancelTask can already find this attempt.
+     */
+    {
+        std::lock_guard<std::mutex> lock(
+            cancellationMutex_
+        );
+
+
+        cancellationFlags_[
+            task.attempt_id()
+        ] =
+            cancellationFlag;
+    }
+
+
     {
         std::lock_guard<std::mutex> lock(
             queueMutex_
         );
 
+
         taskQueue_.push(
-            std::move(task)
+            std::move(
+                task
+            )
         );
     }
 
 
     condition_.notify_one();
+}
+
+
+bool TaskExecutorPool::cancel(
+        const std::string& attemptId) {
+
+    std::lock_guard<std::mutex> lock(
+        cancellationMutex_
+    );
+
+
+    auto iterator =
+        cancellationFlags_.find(
+            attemptId
+        );
+
+
+    if (iterator
+            == cancellationFlags_.end()) {
+
+        return false;
+    }
+
+
+    iterator
+            ->second
+            ->store(
+                true
+            );
+
+
+    return true;
+}
+
+
+CancellationFlag
+TaskExecutorPool::getCancellationFlag(
+        const std::string& attemptId) {
+
+    std::lock_guard<std::mutex> lock(
+        cancellationMutex_
+    );
+
+
+    auto iterator =
+        cancellationFlags_.find(
+            attemptId
+        );
+
+
+    if (iterator
+            == cancellationFlags_.end()) {
+
+        return nullptr;
+    }
+
+
+    return iterator->second;
+}
+
+
+void TaskExecutorPool::removeCancellationFlag(
+        const std::string& attemptId) {
+
+    std::lock_guard<std::mutex> lock(
+        cancellationMutex_
+    );
+
+
+    cancellationFlags_.erase(
+        attemptId
+    );
 }
 
 
@@ -93,6 +206,7 @@ TaskExecutorPool::queuedTaskCount() const {
     std::lock_guard<std::mutex> lock(
         queueMutex_
     );
+
 
     return taskQueue_.size();
 }
@@ -125,10 +239,8 @@ void TaskExecutorPool::workerLoop() {
             );
 
 
-            if (
-                stopping_
-                && taskQueue_.empty()
-            ) {
+            if (stopping_
+                    && taskQueue_.empty()) {
 
                 return;
             }
@@ -144,19 +256,64 @@ void TaskExecutorPool::workerLoop() {
         }
 
 
+        CancellationFlag cancellationFlag =
+            getCancellationFlag(
+                task.attempt_id()
+            );
+
+
+        /*
+         * Cancellation can happen while a task is
+         * waiting in the worker's local queue.
+         *
+         * Do not execute it at all.
+         */
+        if (cancellationFlag
+                && cancellationFlag->load()) {
+
+            ProcessResult result{
+                130,
+                "",
+                "Task cancelled before execution\n",
+                false,
+                true
+            };
+
+
+            onTaskCompleted_(
+                task,
+                result
+            );
+
+
+            removeCancellationFlag(
+                task.attempt_id()
+            );
+
+
+            continue;
+        }
+
+
         // ================================================
-        // Execute task
+        // Execute
         // ================================================
 
-        runningTasks_.fetch_add(1);
+        runningTasks_.fetch_add(
+            1
+        );
 
 
         try {
 
-            onTaskStarted_(task);
+            onTaskStarted_(
+                task
+            );
 
 
-            std::vector<std::string> arguments;
+            std::vector<std::string>
+                arguments;
+
 
             arguments.reserve(
                 static_cast<std::size_t>(
@@ -176,12 +333,13 @@ void TaskExecutorPool::workerLoop() {
             }
 
 
-           ProcessResult result =
-            executeProcess(
-                task.command(),
-                arguments,
-                task.timeout_seconds()
-            );
+            ProcessResult result =
+                executeProcess(
+                    task.command(),
+                    arguments,
+                    task.timeout_seconds(),
+                    cancellationFlag
+                );
 
 
             onTaskCompleted_(
@@ -199,8 +357,10 @@ void TaskExecutorPool::workerLoop() {
                 std::string(
                     "Worker execution error: "
                 ) + exception.what(),
+                false,
                 false
             };
+
 
             onTaskCompleted_(
                 task,
@@ -213,6 +373,7 @@ void TaskExecutorPool::workerLoop() {
                 -1,
                 "",
                 "Unknown worker execution error",
+                false,
                 false
             };
 
@@ -224,6 +385,13 @@ void TaskExecutorPool::workerLoop() {
         }
 
 
-        runningTasks_.fetch_sub(1);
+        runningTasks_.fetch_sub(
+            1
+        );
+
+
+        removeCancellationFlag(
+            task.attempt_id()
+        );
     }
 }

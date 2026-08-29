@@ -29,6 +29,7 @@ message WorkerMessage {
 message ControllerMessage {
   oneof payload {
     TaskAssignment task_assignment = 1;
+    CancelTask cancel_task = 2;
   }
 }
 
@@ -55,6 +56,11 @@ message TaskAssignment {
   uint32 timeout_seconds = 5;
 }
 
+message CancelTask {
+  string task_id = 1;
+  string attempt_id = 2;
+}
+
 message TaskAccepted {
   string task_id = 1;
   string attempt_id = 2;
@@ -71,6 +77,7 @@ message TaskResult {
   bool success = 5;
 
   string attempt_id = 6;
+  bool cancelled = 7;
 }
 
 message RegisterWorkerRequest {

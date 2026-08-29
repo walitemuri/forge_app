@@ -428,6 +428,9 @@ int main(int argc, char* argv[]) {
             taskResult->set_success(
                 result.exitCode == 0
             );
+            taskResult->set_cancelled(
+                result.cancelled
+            );
 
             if (!sendWorkerMessage(message)) {
                 std::cerr << "Failed to send task result for "
@@ -445,24 +448,104 @@ int main(int argc, char* argv[]) {
             forge::v1::ControllerMessage message;
 
             while (commandStream->Read(&message)) {
-                if (!message.has_task_assignment()) {
+
+            // ================================================
+            // New task
+            // ================================================
+
+                if (message.has_task_assignment()) {
+
+                    const auto& task =
+                        message.task_assignment();
+
+
+                    std::cout << "\n";
+                    std::cout << "=== TASK RECEIVED ===\n";
+                    std::cout
+                        << "Task ID: "
+                        << task.task_id()
+                        << "\n";
+
+                    std::cout
+                        << "Attempt ID: "
+                        << task.attempt_id()
+                        << "\n";
+
+                    std::cout
+                        << "Command: "
+                        << task.command()
+                        << "\n";
+
+                    std::cout
+                        << "Timeout: "
+                        << task.timeout_seconds()
+                        << " seconds\n";
+
+                    std::cout
+                        << "Queueing task...\n";
+
+                    std::cout
+                        << "=====================\n";
+
+
+                    executorPool.submit(
+                        task
+                    );
+
+
                     continue;
                 }
 
-                const auto& task = message.task_assignment();
 
-                std::cout << "=== TASK RECEIVED ===\n";
-                std::cout << "Task ID: " << task.task_id() << "\n";
-                std::cout << "Command: " << task.command() << "\n";
-                std::cout << "Timeout: " << task.timeout_seconds() << " seconds\n";
-                std::cout << "Queueing task...\n";
+                // ================================================
+                // Cancel existing attempt
+                // ================================================
 
-                executorPool.submit(task);
+                if (message.has_cancel_task()) {
+
+                    const auto& cancellation =
+                        message.cancel_task();
+
+
+                    bool found =
+                        executorPool.cancel(
+                            cancellation.attempt_id()
+                        );
+
+
+                    std::cout << "\n";
+                    std::cout << "=== CANCEL RECEIVED ===\n";
+
+                    std::cout
+                        << "Task ID: "
+                        << cancellation.task_id()
+                        << "\n";
+
+                    std::cout
+                        << "Attempt ID: "
+                        << cancellation.attempt_id()
+                        << "\n";
+
+                    std::cout
+                        << "Found: "
+                        << (
+                            found
+                                ? "yes"
+                                : "no"
+                        )
+                        << "\n";
+
+                    std::cout
+                        << "=======================\n";
+
+
+                    continue;
+                }
             }
 
-            std::cerr << "Controller command stream closed.\n";
-        }
-    );
+                        std::cerr << "Controller command stream closed.\n";
+                    }
+                );
 
     // Keep exactly one detach. The duplicate detach in the prior file caused
     // std::system_error on macOS.

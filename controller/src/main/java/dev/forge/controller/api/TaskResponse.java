@@ -15,6 +15,7 @@ public record TaskResponse(
 
         String status,
 
+        boolean cancelRequested,
         String workerId,
 
         Instant createdAt,
@@ -43,6 +44,7 @@ public record TaskResponse(
 
                 task.getStatus().name(),
 
+                task.isCancelRequested(),
                 task.getWorkerId(),
 
                 task.getCreatedAt(),
@@ -54,6 +56,7 @@ public record TaskResponse(
                 task.getStdout(),
                 
                 task.getStderr()
+
         );
     }
 }

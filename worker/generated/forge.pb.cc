@@ -39,6 +39,8 @@ PROTOBUF_CONSTINIT ::google::protobuf::internal::ReflectionData
         {&::_pbi::kDescriptorMethods, &::descriptor_table_forge_2eproto, /* tracker*/ nullptr,},
         // ::forge::v1::TaskAssignment
         {&::_pbi::kDescriptorMethods, &::descriptor_table_forge_2eproto, /* tracker*/ nullptr,},
+        // ::forge::v1::CancelTask
+        {&::_pbi::kDescriptorMethods, &::descriptor_table_forge_2eproto, /* tracker*/ nullptr,},
         // ::forge::v1::TaskAccepted
         {&::_pbi::kDescriptorMethods, &::descriptor_table_forge_2eproto, /* tracker*/ nullptr,},
         // ::forge::v1::TaskResult
@@ -418,11 +420,11 @@ constexpr TaskResult::ParseTableT_ TaskResult::InternalGenerateParseTable_(const
     {
       PROTOBUF_FIELD_OFFSET(TaskResult, _impl_._has_bits_),
       0, // no _extensions_
-      6, 56,  // max_field_number, fast_idx_mask
+      7, 56,  // max_field_number, fast_idx_mask
       offsetof(ParseTableT_, field_lookup_table),
-      4294967232,  // skipmap
+      4294967168,  // skipmap
       offsetof(ParseTableT_, field_entries),
-      6,  // num_field_entries
+      7,  // num_field_entries
       0,  // num_aux_entries
       offsetof(ParseTableT_, field_names),  // no aux_entries
       class_data,
@@ -457,7 +459,10 @@ constexpr TaskResult::ParseTableT_ TaskResult::InternalGenerateParseTable_(const
       {::_pbi::TcParser::FastUS1,
        {50, 3, 0,
         PROTOBUF_FIELD_OFFSET(TaskResult, _impl_.attempt_id_)}},
-      {::_pbi::TcParser::MiniParse, {}},
+      // bool cancelled = 7;
+      {::_pbi::TcParser::SingularVarintNoZag1<bool, offsetof(TaskResult, _impl_.cancelled_), 6>(),
+       {56, 6, 0,
+        PROTOBUF_FIELD_OFFSET(TaskResult, _impl_.cancelled_)}},
     }}, {{
       65535, 65535
     }}, {{
@@ -473,6 +478,8 @@ constexpr TaskResult::ParseTableT_ TaskResult::InternalGenerateParseTable_(const
       {PROTOBUF_FIELD_OFFSET(TaskResult, _impl_.success_), _Internal::kHasBitsOffset + 5, 0, (0 | ::_fl::kFcOptional | ::_fl::kBool)},
       // string attempt_id = 6;
       {PROTOBUF_FIELD_OFFSET(TaskResult, _impl_.attempt_id_), _Internal::kHasBitsOffset + 3, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
+      // bool cancelled = 7;
+      {PROTOBUF_FIELD_OFFSET(TaskResult, _impl_.cancelled_), _Internal::kHasBitsOffset + 6, 0, (0 | ::_fl::kFcOptional | ::_fl::kBool)},
     }},
     // no aux_entries
     {{
@@ -504,7 +511,8 @@ inline constexpr TaskResult::Impl_::Impl_(
             &::google::protobuf::internal::fixed_address_empty_string,
             ::_pbi::ConstantInitialized()),
         exit_code_{0},
-        success_{false} {}
+        success_{false},
+        cancelled_{false} {}
 
 template <typename>
 constexpr TaskResult::TaskResult(::_pbi::ConstantInitialized,
@@ -547,7 +555,7 @@ constexpr auto TaskResult::InternalGenerateClassData_(
           false,
       },
 #ifdef PROTOBUF_MESSAGE_GLOBALS
-      &file_reflection_data[6],
+      &file_reflection_data[7],
 #else   // !PROTOBUF_MESSAGE_GLOBALS
       &::_pbi::kDescriptorMethods,
       &descriptor_table_forge_2eproto,
@@ -891,7 +899,7 @@ constexpr auto TaskAccepted::InternalGenerateClassData_(
           false,
       },
 #ifdef PROTOBUF_MESSAGE_GLOBALS
-      &file_reflection_data[5],
+      &file_reflection_data[6],
 #else   // !PROTOBUF_MESSAGE_GLOBALS
       &::_pbi::kDescriptorMethods,
       &descriptor_table_forge_2eproto,
@@ -1044,7 +1052,7 @@ constexpr auto RegisterWorkerResponse::InternalGenerateClassData_(
           false,
       },
 #ifdef PROTOBUF_MESSAGE_GLOBALS
-      &file_reflection_data[8],
+      &file_reflection_data[9],
 #else   // !PROTOBUF_MESSAGE_GLOBALS
       &::_pbi::kDescriptorMethods,
       &descriptor_table_forge_2eproto,
@@ -1227,7 +1235,7 @@ constexpr auto RegisterWorkerRequest::InternalGenerateClassData_(
           false,
       },
 #ifdef PROTOBUF_MESSAGE_GLOBALS
-      &file_reflection_data[7],
+      &file_reflection_data[8],
 #else   // !PROTOBUF_MESSAGE_GLOBALS
       &::_pbi::kDescriptorMethods,
       &descriptor_table_forge_2eproto,
@@ -1368,7 +1376,7 @@ constexpr auto HeartbeatResponse::InternalGenerateClassData_(
           false,
       },
 #ifdef PROTOBUF_MESSAGE_GLOBALS
-      &file_reflection_data[10],
+      &file_reflection_data[11],
 #else   // !PROTOBUF_MESSAGE_GLOBALS
       &::_pbi::kDescriptorMethods,
       &descriptor_table_forge_2eproto,
@@ -1535,7 +1543,7 @@ constexpr auto HeartbeatRequest::InternalGenerateClassData_(
           false,
       },
 #ifdef PROTOBUF_MESSAGE_GLOBALS
-      &file_reflection_data[9],
+      &file_reflection_data[10],
 #else   // !PROTOBUF_MESSAGE_GLOBALS
       &::_pbi::kDescriptorMethods,
       &descriptor_table_forge_2eproto,
@@ -1582,6 +1590,162 @@ const ::_pbi::ClassData* HeartbeatRequest_get_class_data() {
   return HeartbeatRequest_globals_.GetClassData();
 #else
   return HeartbeatRequest_class_data_.base();
+#endif  // PROTOBUF_MESSAGE_GLOBALS
+}
+}  // namespace
+#endif  // PROTOBUF_CUSTOM_VTABLE
+class CancelTask::_Internal {
+ public:
+  using HasBits = decltype(::std::declval<CancelTask>()._impl_._has_bits_);
+  static constexpr ::int32_t kHasBitsOffset =
+      8 * PROTOBUF_FIELD_OFFSET(CancelTask, _impl_._has_bits_);
+};
+
+constexpr CancelTask::ParseTableT_ CancelTask::InternalGenerateParseTable_(const ::_pbi::ClassData* class_data) {
+  return ParseTableT_{
+    {
+      PROTOBUF_FIELD_OFFSET(CancelTask, _impl_._has_bits_),
+      0, // no _extensions_
+      2, 8,  // max_field_number, fast_idx_mask
+      offsetof(ParseTableT_, field_lookup_table),
+      4294967292,  // skipmap
+      offsetof(ParseTableT_, field_entries),
+      2,  // num_field_entries
+      0,  // num_aux_entries
+      offsetof(ParseTableT_, field_names),  // no aux_entries
+      class_data,
+      nullptr,  // post_loop_handler
+      ::_pbi::TcParser::GenericFallback,  // fallback
+      #ifdef PROTOBUF_PREFETCH_PARSE_TABLE
+      ::_pbi::TcParser::GetTable<::forge::v1::CancelTask>(),  // to_prefetch
+      #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
+    }, {{
+      // string attempt_id = 2;
+      {::_pbi::TcParser::FastUS1,
+       {18, 1, 0,
+        PROTOBUF_FIELD_OFFSET(CancelTask, _impl_.attempt_id_)}},
+      // string task_id = 1;
+      {::_pbi::TcParser::FastUS1,
+       {10, 0, 0,
+        PROTOBUF_FIELD_OFFSET(CancelTask, _impl_.task_id_)}},
+    }}, {{
+      65535, 65535
+    }}, {{
+      // string task_id = 1;
+      {PROTOBUF_FIELD_OFFSET(CancelTask, _impl_.task_id_), _Internal::kHasBitsOffset + 0, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
+      // string attempt_id = 2;
+      {PROTOBUF_FIELD_OFFSET(CancelTask, _impl_.attempt_id_), _Internal::kHasBitsOffset + 1, 0, (0 | ::_fl::kFcOptional | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    }},
+    // no aux_entries
+    {{
+      "\23\7\12\0\0\0\0\0"
+      "forge.v1.CancelTask"
+      "task_id"
+      "attempt_id"
+    }},
+  };
+}
+
+
+inline constexpr CancelTask::Impl_::Impl_(
+    [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
+    ::_pbi::ConstantInitialized) noexcept
+      : _cached_size_{0},
+        task_id_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        attempt_id_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()) {}
+
+template <typename>
+constexpr CancelTask::CancelTask(::_pbi::ConstantInitialized,
+                       const ::_pbi::ClassData* PROTOBUF_NONNULL class_data)
+    : ::google::protobuf::Message(
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+          class_data
+#endif  // PROTOBUF_CUSTOM_VTABLE
+          ),
+      _impl_(internal_visibility(), ::_pbi::ConstantInitialized()) {
+}
+inline void* PROTOBUF_NONNULL CancelTask::PlacementNew_(
+    const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+    ::google::protobuf::Arena* PROTOBUF_NULLABLE arena) {
+  return ::new (mem) CancelTask(arena);
+}
+constexpr auto CancelTask::InternalNewImpl_() {
+  return ::google::protobuf::internal::MessageCreator::CopyInit(sizeof(CancelTask), alignof(CancelTask));
+}
+constexpr auto CancelTask::InternalGenerateClassData_(
+    const MessageLite& prototype,
+    const ::google::protobuf::internal::TcParseTableBase* tc_table) {
+  return ::google::protobuf::internal::ClassDataFull{
+      ::google::protobuf::internal::ClassData{
+          &prototype,
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+          &_table_.header,
+#else
+          tc_table,
+#endif
+          nullptr,  // IsInitialized
+          &CancelTask::MergeImpl,
+          ::google::protobuf::Message::GetNewImpl<CancelTask>(),
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+          &CancelTask::SharedDtor,
+          ::google::protobuf::Message::GetClearImpl<CancelTask>(), &CancelTask::ByteSizeLong,
+              &CancelTask::_InternalSerialize,
+#endif  // PROTOBUF_CUSTOM_VTABLE
+          PROTOBUF_FIELD_OFFSET(CancelTask, _impl_._cached_size_),
+          false,
+      },
+#ifdef PROTOBUF_MESSAGE_GLOBALS
+      &file_reflection_data[5],
+#else   // !PROTOBUF_MESSAGE_GLOBALS
+      &::_pbi::kDescriptorMethods,
+      &descriptor_table_forge_2eproto,
+      nullptr,  // tracker
+#endif  // PROTOBUF_MESSAGE_GLOBALS
+  };
+}
+struct CancelTaskGlobalsTypeInternal : ::_pbi::MessageGlobalsBase {
+  constexpr CancelTaskGlobalsTypeInternal()
+      :
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+        _default(::_pbi::ConstantInitialized{},
+                 CancelTask_class_data_.base())
+#else   // !PROTOBUF_MESSAGE_GLOBALS
+        MessageGlobalsBase(CancelTask::InternalGenerateClassData_(
+            _default, &CancelTask_globals_._table.header)),
+        _default(::_pbi::ConstantInitialized{}, GetClassData()),
+        _table(::_pbi::PrivateAccess::GenerateParseTable<CancelTask>(
+            GetClassData()))
+#endif  // PROTOBUF_MESSAGE_GLOBALS
+  {
+  }
+  ~CancelTaskGlobalsTypeInternal() {}
+  union {
+    alignas(::_pbi::kMaxMessageAlignment) CancelTask _default;
+  };
+#ifdef PROTOBUF_MESSAGE_GLOBALS
+  decltype(::_pbi::PrivateAccess::GenerateParseTable<CancelTask>(
+      ::std::declval<const ::_pbi::ClassData*>())) _table;
+#endif
+};
+#ifdef PROTOBUF_MESSAGE_GLOBALS
+static_assert(PROTOBUF_FIELD_OFFSET(CancelTaskGlobalsTypeInternal, _default) ==
+              ::_pbi::MessageGlobalsBase::OffsetToDefault());
+#endif  // PROTOBUF_MESSAGE_GLOBALS
+
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
+    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 PROTOBUF_MESSAGE_GLOBALS_CONST CancelTaskGlobalsTypeInternal CancelTask_globals_
+        PROTOBUF_MESSAGE_GLOBALS_SECTION(.data.rel.ro);
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+namespace {
+const ::_pbi::ClassData* CancelTask_get_class_data() {
+#ifdef PROTOBUF_MESSAGE_GLOBALS
+  return CancelTask_globals_.GetClassData();
+#else
+  return CancelTask_class_data_.base();
 #endif  // PROTOBUF_MESSAGE_GLOBALS
 }
 }  // namespace
@@ -1764,12 +1928,12 @@ constexpr ControllerMessage::ParseTableT_ ControllerMessage::InternalGeneratePar
       PROTOBUF_FIELD_OFFSET(ControllerMessage,
                             _impl_._cached_size_),  // no hasbits
       0, // no _extensions_
-      1, 0,  // max_field_number, fast_idx_mask
+      2, 0,  // max_field_number, fast_idx_mask
       offsetof(ParseTableT_, field_lookup_table),
-      4294967294,  // skipmap
+      4294967292,  // skipmap
       offsetof(ParseTableT_, field_entries),
-      1,  // num_field_entries
-      1,  // num_aux_entries
+      2,  // num_field_entries
+      2,  // num_aux_entries
       offsetof(ParseTableT_, aux_entries),
       class_data,
       nullptr,  // post_loop_handler
@@ -1784,12 +1948,19 @@ constexpr ControllerMessage::ParseTableT_ ControllerMessage::InternalGeneratePar
     }}, {{
       // .forge.v1.TaskAssignment task_assignment = 1;
       {PROTOBUF_FIELD_OFFSET(ControllerMessage, _impl_.payload_.task_assignment_), _Internal::kOneofCaseOffset + 0, 0, (0 | ::_fl::kFcOneof | ::_fl::kMessage | ::_fl::kTvTable)},
+      // .forge.v1.CancelTask cancel_task = 2;
+      {PROTOBUF_FIELD_OFFSET(ControllerMessage, _impl_.payload_.cancel_task_), _Internal::kOneofCaseOffset + 0, 1, (0 | ::_fl::kFcOneof | ::_fl::kMessage | ::_fl::kTvTable)},
     }},
     {{
         #ifndef PROTOBUF_MESSAGE_GLOBALS
         {::_pbi::TcParser::GetTable<::forge::v1::TaskAssignment>()},
         #else
         {::_pbi::FieldAuxMessageGlobals(), &::forge::v1::TaskAssignment_globals_},
+        #endif
+        #ifndef PROTOBUF_MESSAGE_GLOBALS
+        {::_pbi::TcParser::GetTable<::forge::v1::CancelTask>()},
+        #else
+        {::_pbi::FieldAuxMessageGlobals(), &::forge::v1::CancelTask_globals_},
         #endif
     }},
     {{
@@ -1917,6 +2088,7 @@ const ::uint32_t
         PROTOBUF_FIELD_OFFSET(::forge::v1::ControllerMessage, _impl_._oneof_case_[0]),
         PROTOBUF_FIELD_OFFSET(::forge::v1::ControllerMessage, _impl_.payload_),
         PROTOBUF_FIELD_OFFSET(::forge::v1::ControllerMessage, _impl_.payload_),
+        PROTOBUF_FIELD_OFFSET(::forge::v1::ControllerMessage, _impl_.payload_),
         0x081, // bitmap
         PROTOBUF_FIELD_OFFSET(::forge::v1::WorkerHello, _impl_._has_bits_),
         8, // hasbit index offset
@@ -1955,6 +2127,13 @@ const ::uint32_t
         3,
         4,
         0x081, // bitmap
+        PROTOBUF_FIELD_OFFSET(::forge::v1::CancelTask, _impl_._has_bits_),
+        5, // hasbit index offset
+        PROTOBUF_FIELD_OFFSET(::forge::v1::CancelTask, _impl_.task_id_),
+        PROTOBUF_FIELD_OFFSET(::forge::v1::CancelTask, _impl_.attempt_id_),
+        0,
+        1,
+        0x081, // bitmap
         PROTOBUF_FIELD_OFFSET(::forge::v1::TaskAccepted, _impl_._has_bits_),
         5, // hasbit index offset
         PROTOBUF_FIELD_OFFSET(::forge::v1::TaskAccepted, _impl_.task_id_),
@@ -1963,19 +2142,21 @@ const ::uint32_t
         1,
         0x081, // bitmap
         PROTOBUF_FIELD_OFFSET(::forge::v1::TaskResult, _impl_._has_bits_),
-        9, // hasbit index offset
+        10, // hasbit index offset
         PROTOBUF_FIELD_OFFSET(::forge::v1::TaskResult, _impl_.task_id_),
         PROTOBUF_FIELD_OFFSET(::forge::v1::TaskResult, _impl_.exit_code_),
         PROTOBUF_FIELD_OFFSET(::forge::v1::TaskResult, _impl_.stdout_),
         PROTOBUF_FIELD_OFFSET(::forge::v1::TaskResult, _impl_.stderr_),
         PROTOBUF_FIELD_OFFSET(::forge::v1::TaskResult, _impl_.success_),
         PROTOBUF_FIELD_OFFSET(::forge::v1::TaskResult, _impl_.attempt_id_),
+        PROTOBUF_FIELD_OFFSET(::forge::v1::TaskResult, _impl_.cancelled_),
         0,
         4,
         1,
         2,
         5,
         3,
+        6,
         0x081, // bitmap
         PROTOBUF_FIELD_OFFSET(::forge::v1::RegisterWorkerRequest, _impl_._has_bits_),
         8, // hasbit index offset
@@ -2018,15 +2199,16 @@ static const ::_pbi::MigrationSchema
     schemas[] ABSL_ATTRIBUTE_SECTION_VARIABLE(protodesc_cold) = {
         {0, sizeof(::forge::v1::WorkerMessage)},
         {7, sizeof(::forge::v1::ControllerMessage)},
-        {11, sizeof(::forge::v1::WorkerHello)},
-        {24, sizeof(::forge::v1::WorkerHeartbeat)},
-        {35, sizeof(::forge::v1::TaskAssignment)},
-        {48, sizeof(::forge::v1::TaskAccepted)},
-        {55, sizeof(::forge::v1::TaskResult)},
-        {70, sizeof(::forge::v1::RegisterWorkerRequest)},
-        {83, sizeof(::forge::v1::RegisterWorkerResponse)},
-        {90, sizeof(::forge::v1::HeartbeatRequest)},
-        {101, sizeof(::forge::v1::HeartbeatResponse)},
+        {12, sizeof(::forge::v1::WorkerHello)},
+        {25, sizeof(::forge::v1::WorkerHeartbeat)},
+        {36, sizeof(::forge::v1::TaskAssignment)},
+        {49, sizeof(::forge::v1::CancelTask)},
+        {56, sizeof(::forge::v1::TaskAccepted)},
+        {63, sizeof(::forge::v1::TaskResult)},
+        {80, sizeof(::forge::v1::RegisterWorkerRequest)},
+        {93, sizeof(::forge::v1::RegisterWorkerResponse)},
+        {100, sizeof(::forge::v1::HeartbeatRequest)},
+        {111, sizeof(::forge::v1::HeartbeatResponse)},
 };
 static const ::_pbi::MessageGlobalsBase* PROTOBUF_NONNULL const
     file_message_globals[] = {
@@ -2035,6 +2217,7 @@ static const ::_pbi::MessageGlobalsBase* PROTOBUF_NONNULL const
         &::forge::v1::WorkerHello_globals_,
         &::forge::v1::WorkerHeartbeat_globals_,
         &::forge::v1::TaskAssignment_globals_,
+        &::forge::v1::CancelTask_globals_,
         &::forge::v1::TaskAccepted_globals_,
         &::forge::v1::TaskResult_globals_,
         &::forge::v1::RegisterWorkerRequest_globals_,
@@ -2049,50 +2232,53 @@ const char descriptor_table_protodef_forge_2eproto[] ABSL_ATTRIBUTE_SECTION_VARI
     "\000\022.\n\theartbeat\030\002 \001(\0132\031.forge.v1.WorkerHe"
     "artbeatH\000\022/\n\rtask_accepted\030\003 \001(\0132\026.forge"
     ".v1.TaskAcceptedH\000\022+\n\013task_result\030\004 \001(\0132"
-    "\024.forge.v1.TaskResultH\000B\t\n\007payload\"S\n\021Co"
-    "ntrollerMessage\0223\n\017task_assignment\030\001 \001(\013"
-    "2\030.forge.v1.TaskAssignmentH\000B\t\n\007payload\""
-    "u\n\013WorkerHello\022\021\n\tworker_id\030\001 \001(\t\022\020\n\010hos"
-    "tname\030\002 \001(\t\022\021\n\tcpu_cores\030\003 \001(\r\022\024\n\014memory"
-    "_bytes\030\004 \001(\004\022\030\n\020operating_system\030\005 \001(\t\"q"
-    "\n\017WorkerHeartbeat\022\021\n\tworker_id\030\001 \001(\t\022\031\n\021"
-    "cpu_usage_percent\030\002 \001(\001\022\031\n\021memory_used_b"
-    "ytes\030\003 \001(\004\022\025\n\rrunning_tasks\030\004 \001(\r\"r\n\016Tas"
-    "kAssignment\022\017\n\007task_id\030\001 \001(\t\022\017\n\007command\030"
-    "\002 \001(\t\022\021\n\targuments\030\003 \003(\t\022\022\n\nattempt_id\030\004"
-    " \001(\t\022\027\n\017timeout_seconds\030\005 \001(\r\"3\n\014TaskAcc"
-    "epted\022\017\n\007task_id\030\001 \001(\t\022\022\n\nattempt_id\030\002 \001"
-    "(\t\"u\n\nTaskResult\022\017\n\007task_id\030\001 \001(\t\022\021\n\texi"
-    "t_code\030\002 \001(\005\022\016\n\006stdout\030\003 \001(\t\022\016\n\006stderr\030\004"
-    " \001(\t\022\017\n\007success\030\005 \001(\010\022\022\n\nattempt_id\030\006 \001("
-    "\t\"\177\n\025RegisterWorkerRequest\022\021\n\tworker_id\030"
-    "\001 \001(\t\022\020\n\010hostname\030\002 \001(\t\022\021\n\tcpu_cores\030\003 \001"
-    "(\r\022\024\n\014memory_bytes\030\004 \001(\004\022\030\n\020operating_sy"
-    "stem\030\005 \001(\t\";\n\026RegisterWorkerResponse\022\020\n\010"
-    "accepted\030\001 \001(\010\022\017\n\007message\030\002 \001(\t\"r\n\020Heart"
-    "beatRequest\022\021\n\tworker_id\030\001 \001(\t\022\031\n\021cpu_us"
-    "age_percent\030\002 \001(\001\022\031\n\021memory_used_bytes\030\003"
-    " \001(\004\022\025\n\rrunning_tasks\030\004 \001(\r\"%\n\021Heartbeat"
-    "Response\022\020\n\010accepted\030\001 \001(\0102\367\001\n\017ForgeCont"
-    "roller\022S\n\016RegisterWorker\022\037.forge.v1.Regi"
-    "sterWorkerRequest\032 .forge.v1.RegisterWor"
-    "kerResponse\022D\n\tHeartbeat\022\032.forge.v1.Hear"
-    "tbeatRequest\032\033.forge.v1.HeartbeatRespons"
-    "e\022I\n\rConnectWorker\022\027.forge.v1.WorkerMess"
-    "age\032\033.forge.v1.ControllerMessage(\0010\001B\023\n\017"
-    "dev.forge.protoP\001b\006proto3"
+    "\024.forge.v1.TaskResultH\000B\t\n\007payload\"\200\001\n\021C"
+    "ontrollerMessage\0223\n\017task_assignment\030\001 \001("
+    "\0132\030.forge.v1.TaskAssignmentH\000\022+\n\013cancel_"
+    "task\030\002 \001(\0132\024.forge.v1.CancelTaskH\000B\t\n\007pa"
+    "yload\"u\n\013WorkerHello\022\021\n\tworker_id\030\001 \001(\t\022"
+    "\020\n\010hostname\030\002 \001(\t\022\021\n\tcpu_cores\030\003 \001(\r\022\024\n\014"
+    "memory_bytes\030\004 \001(\004\022\030\n\020operating_system\030\005"
+    " \001(\t\"q\n\017WorkerHeartbeat\022\021\n\tworker_id\030\001 \001"
+    "(\t\022\031\n\021cpu_usage_percent\030\002 \001(\001\022\031\n\021memory_"
+    "used_bytes\030\003 \001(\004\022\025\n\rrunning_tasks\030\004 \001(\r\""
+    "r\n\016TaskAssignment\022\017\n\007task_id\030\001 \001(\t\022\017\n\007co"
+    "mmand\030\002 \001(\t\022\021\n\targuments\030\003 \003(\t\022\022\n\nattemp"
+    "t_id\030\004 \001(\t\022\027\n\017timeout_seconds\030\005 \001(\r\"1\n\nC"
+    "ancelTask\022\017\n\007task_id\030\001 \001(\t\022\022\n\nattempt_id"
+    "\030\002 \001(\t\"3\n\014TaskAccepted\022\017\n\007task_id\030\001 \001(\t\022"
+    "\022\n\nattempt_id\030\002 \001(\t\"\210\001\n\nTaskResult\022\017\n\007ta"
+    "sk_id\030\001 \001(\t\022\021\n\texit_code\030\002 \001(\005\022\016\n\006stdout"
+    "\030\003 \001(\t\022\016\n\006stderr\030\004 \001(\t\022\017\n\007success\030\005 \001(\010\022"
+    "\022\n\nattempt_id\030\006 \001(\t\022\021\n\tcancelled\030\007 \001(\010\"\177"
+    "\n\025RegisterWorkerRequest\022\021\n\tworker_id\030\001 \001"
+    "(\t\022\020\n\010hostname\030\002 \001(\t\022\021\n\tcpu_cores\030\003 \001(\r\022"
+    "\024\n\014memory_bytes\030\004 \001(\004\022\030\n\020operating_syste"
+    "m\030\005 \001(\t\";\n\026RegisterWorkerResponse\022\020\n\010acc"
+    "epted\030\001 \001(\010\022\017\n\007message\030\002 \001(\t\"r\n\020Heartbea"
+    "tRequest\022\021\n\tworker_id\030\001 \001(\t\022\031\n\021cpu_usage"
+    "_percent\030\002 \001(\001\022\031\n\021memory_used_bytes\030\003 \001("
+    "\004\022\025\n\rrunning_tasks\030\004 \001(\r\"%\n\021HeartbeatRes"
+    "ponse\022\020\n\010accepted\030\001 \001(\0102\367\001\n\017ForgeControl"
+    "ler\022S\n\016RegisterWorker\022\037.forge.v1.Registe"
+    "rWorkerRequest\032 .forge.v1.RegisterWorker"
+    "Response\022D\n\tHeartbeat\022\032.forge.v1.Heartbe"
+    "atRequest\032\033.forge.v1.HeartbeatResponse\022I"
+    "\n\rConnectWorker\022\027.forge.v1.WorkerMessage"
+    "\032\033.forge.v1.ControllerMessage(\0010\001B\023\n\017dev"
+    ".forge.protoP\001b\006proto3"
 };
 static ::absl::once_flag descriptor_table_forge_2eproto_once;
 PROTOBUF_CONSTINIT const ::_pbi::DescriptorTable descriptor_table_forge_2eproto = {
     false,
     false,
-    1465,
+    1582,
     descriptor_table_protodef_forge_2eproto,
     "forge.proto",
     &descriptor_table_forge_2eproto_once,
     nullptr,
     0,
-    11,
+    12,
     schemas,
     file_message_globals,
     TableStruct_forge_2eproto::offsets,
@@ -2513,6 +2699,19 @@ void ControllerMessage::set_allocated_task_assignment(::forge::v1::TaskAssignmen
   }
   // @@protoc_insertion_point(field_set_allocated:forge.v1.ControllerMessage.task_assignment)
 }
+void ControllerMessage::set_allocated_cancel_task(::forge::v1::CancelTask* PROTOBUF_NULLABLE cancel_task) {
+  ::google::protobuf::Arena* message_arena = GetArena();
+  clear_payload();
+  if (cancel_task) {
+    ::google::protobuf::Arena* submessage_arena = cancel_task->GetArena();
+    if (message_arena != submessage_arena) {
+      cancel_task = ::google::protobuf::internal::GetOwnedMessage(message_arena, cancel_task, submessage_arena);
+    }
+    set_has_cancel_task();
+    _impl_.payload_.cancel_task_ = cancel_task;
+  }
+  // @@protoc_insertion_point(field_set_allocated:forge.v1.ControllerMessage.cancel_task)
+}
 ControllerMessage::ControllerMessage(::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
 #if defined(PROTOBUF_CUSTOM_VTABLE)
     : ::google::protobuf::Message(arena, ControllerMessage_get_class_data()) {
@@ -2549,6 +2748,9 @@ ControllerMessage::ControllerMessage(
       break;
       case kTaskAssignment:
         _impl_.payload_.task_assignment_ = ::google::protobuf::Message::CopyConstruct(arena, *from._impl_.payload_.task_assignment_);
+        break;
+      case kCancelTask:
+        _impl_.payload_.cancel_task_ = ::google::protobuf::Message::CopyConstruct(arena, *from._impl_.payload_.cancel_task_);
         break;
   }
 
@@ -2590,6 +2792,14 @@ void ControllerMessage::clear_payload() {
         delete _impl_.payload_.task_assignment_;
       } else if (::google::protobuf::internal::DebugHardenClearOneofMessageOnArena()) {
         ::google::protobuf::internal::MaybePoisonAfterClear(_impl_.payload_.task_assignment_);
+      }
+      break;
+    }
+    case kCancelTask: {
+      if (GetArena() == nullptr) {
+        delete _impl_.payload_.cancel_task_;
+      } else if (::google::protobuf::internal::DebugHardenClearOneofMessageOnArena()) {
+        ::google::protobuf::internal::MaybePoisonAfterClear(_impl_.payload_.cancel_task_);
       }
       break;
     }
@@ -2656,13 +2866,22 @@ PROTOBUF_NOINLINE void ControllerMessage::Clear() {
   ::uint32_t cached_has_bits = 0;
   (void)cached_has_bits;
 
-  // .forge.v1.TaskAssignment task_assignment = 1;
-  if (this_.payload_case() == kTaskAssignment) {
-    target = ::google::protobuf::internal::WireFormatLite::InternalWriteMessage(
-        1, *this_._impl_.payload_.task_assignment_, this_._impl_.payload_.task_assignment_->GetCachedSize(), target,
-        stream);
+  switch (this_.payload_case()) {
+    case kTaskAssignment: {
+      target = ::google::protobuf::internal::WireFormatLite::InternalWriteMessage(
+          1, *this_._impl_.payload_.task_assignment_, this_._impl_.payload_.task_assignment_->GetCachedSize(), target,
+          stream);
+      break;
+    }
+    case kCancelTask: {
+      target = ::google::protobuf::internal::WireFormatLite::InternalWriteMessage(
+          2, *this_._impl_.payload_.cancel_task_, this_._impl_.payload_.cancel_task_->GetCachedSize(), target,
+          stream);
+      break;
+    }
+    default:
+      break;
   }
-
   if (ABSL_PREDICT_FALSE(this_._internal_metadata_.have_unknown_fields())) {
     target =
         ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
@@ -2691,6 +2910,12 @@ PROTOBUF_NOINLINE void ControllerMessage::Clear() {
     case kTaskAssignment: {
       total_size += 1 +
                     ::google::protobuf::internal::WireFormatLite::MessageSize(*this_._impl_.payload_.task_assignment_);
+      break;
+    }
+    // .forge.v1.CancelTask cancel_task = 2;
+    case kCancelTask: {
+      total_size += 1 +
+                    ::google::protobuf::internal::WireFormatLite::MessageSize(*this_._impl_.payload_.cancel_task_);
       break;
     }
     case PAYLOAD_NOT_SET: {
@@ -2731,6 +2956,14 @@ void ControllerMessage::MergeImpl(::google::protobuf::MessageLite& to_msg,
           _this->_impl_.payload_.task_assignment_ = ::google::protobuf::Message::CopyConstruct(arena, *from._impl_.payload_.task_assignment_);
         } else {
           _this->_impl_.payload_.task_assignment_->MergeFrom(*from._impl_.payload_.task_assignment_);
+        }
+        break;
+      }
+      case kCancelTask: {
+        if (oneof_needs_init) {
+          _this->_impl_.payload_.cancel_task_ = ::google::protobuf::Message::CopyConstruct(arena, *from._impl_.payload_.cancel_task_);
+        } else {
+          _this->_impl_.payload_.cancel_task_->MergeFrom(*from._impl_.payload_.cancel_task_);
         }
         break;
       }
@@ -3767,6 +4000,258 @@ void TaskAssignment::InternalSwap(TaskAssignment* PROTOBUF_RESTRICT PROTOBUF_NON
 }
 // ===================================================================
 
+CancelTask::CancelTask(::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(arena, CancelTask_get_class_data()) {
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(arena) {
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  SharedCtor(arena);
+  // @@protoc_insertion_point(arena_constructor:forge.v1.CancelTask)
+}
+PROTOBUF_NDEBUG_INLINE CancelTask::Impl_::Impl_(
+    [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
+    [[maybe_unused]] ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
+    [[maybe_unused]] const ::forge::v1::CancelTask& from_msg)
+      : _has_bits_{from._has_bits_},
+        _cached_size_{0},
+        task_id_(arena, from.task_id_),
+        attempt_id_(arena, from.attempt_id_) {}
+
+CancelTask::CancelTask(
+    ::google::protobuf::Arena* PROTOBUF_NULLABLE arena,
+    const CancelTask& from)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(arena, CancelTask_get_class_data()) {
+
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(arena) {
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  CancelTask* const _this = this;
+  (void)_this;
+  _internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
+      from._internal_metadata_);
+  new (&_impl_) Impl_(internal_visibility(), arena, from._impl_, from);
+
+  // @@protoc_insertion_point(copy_constructor:forge.v1.CancelTask)
+}
+PROTOBUF_NDEBUG_INLINE CancelTask::Impl_::Impl_(
+    [[maybe_unused]] ::google::protobuf::internal::InternalVisibility visibility,
+    [[maybe_unused]] ::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
+      : _cached_size_{0},
+        task_id_(arena),
+        attempt_id_(arena) {}
+
+inline void CancelTask::SharedCtor(::_pb::Arena* PROTOBUF_NULLABLE arena) {
+  new (&_impl_) Impl_(internal_visibility(), arena);
+}
+CancelTask::~CancelTask() {
+  // @@protoc_insertion_point(destructor:forge.v1.CancelTask)
+  SharedDtor(*this);
+}
+inline void CancelTask::SharedDtor(MessageLite& self) {
+  CancelTask& this_ = static_cast<CancelTask&>(self);
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    this_.CheckHasBitConsistency();
+  }
+  this_._internal_metadata_.Delete<::google::protobuf::UnknownFieldSet>();
+  ABSL_DCHECK(this_.GetArena() == nullptr);
+  this_._impl_.task_id_.Destroy();
+  this_._impl_.attempt_id_.Destroy();
+  this_._impl_.~Impl_();
+}
+
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 const
+    ::google::protobuf::internal::ClassDataFull CancelTask_class_data_ =
+        CancelTask::InternalGenerateClassData_(CancelTask_globals_._default);
+
+PROTOBUF_ATTRIBUTE_WEAK const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL
+CancelTask::GetClassData() const {
+  ::google::protobuf::internal::PrefetchToLocalCache(&CancelTask_class_data_);
+  ::google::protobuf::internal::PrefetchToLocalCache(CancelTask_class_data_.tc_table);
+  return CancelTask_class_data_.base();
+}
+#else
+PROTOBUF_ATTRIBUTE_WEAK const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL
+CancelTask::GetClassData() const {
+  ::google::protobuf::internal::PrefetchToLocalCache(&CancelTask_globals_);
+  ::google::protobuf::internal::PrefetchToLocalCache(
+      ::google::protobuf::internal::MessageGlobalsBase::ToParseTableBase(&CancelTask_globals_));
+  return CancelTask_globals_.GetClassData();
+}
+#endif  // !PROTOBUF_MESSAGE_GLOBALS
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+PROTOBUF_CONSTINIT
+PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 const CancelTask::ParseTableT_
+    CancelTask::_table_ =
+        CancelTask::InternalGenerateParseTable_(CancelTask_class_data_.base());
+#endif  // !PROTOBUF_MESSAGE_GLOBALS
+PROTOBUF_NOINLINE void CancelTask::Clear() {
+// @@protoc_insertion_point(message_clear_start:forge.v1.CancelTask)
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  cached_has_bits = _impl_._has_bits_[0];
+  if (BatchCheckHasBit(cached_has_bits, 0x00000003U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      _impl_.task_id_.ClearNonDefaultToEmpty();
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      _impl_.attempt_id_.ClearNonDefaultToEmpty();
+    }
+  }
+  _impl_._has_bits_.Clear();
+  _internal_metadata_.Clear<::google::protobuf::UnknownFieldSet>();
+}
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+::uint8_t* PROTOBUF_NONNULL CancelTask::_InternalSerialize(
+    const ::google::protobuf::MessageLite& base, ::uint8_t* PROTOBUF_NONNULL target,
+    ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) {
+  const CancelTask& this_ = static_cast<const CancelTask&>(base);
+#else   // PROTOBUF_CUSTOM_VTABLE
+::uint8_t* PROTOBUF_NONNULL CancelTask::_InternalSerialize(
+    ::uint8_t* PROTOBUF_NONNULL target,
+    ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+  const CancelTask& this_ = *this;
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    this_.CheckHasBitConsistency();
+  }
+  // @@protoc_insertion_point(serialize_to_array_start:forge.v1.CancelTask)
+  ::uint32_t cached_has_bits = 0;
+  (void)cached_has_bits;
+
+  cached_has_bits = this_._impl_._has_bits_[0];
+  // string task_id = 1;
+  if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+    if (!this_._internal_task_id().empty()) {
+      const ::std::string& _s = this_._internal_task_id();
+      ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+          _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "forge.v1.CancelTask.task_id");
+      target = stream->WriteStringMaybeAliased(1, _s, target);
+    }
+  }
+
+  // string attempt_id = 2;
+  if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+    if (!this_._internal_attempt_id().empty()) {
+      const ::std::string& _s = this_._internal_attempt_id();
+      ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+          _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "forge.v1.CancelTask.attempt_id");
+      target = stream->WriteStringMaybeAliased(2, _s, target);
+    }
+  }
+
+  if (ABSL_PREDICT_FALSE(this_._internal_metadata_.have_unknown_fields())) {
+    target =
+        ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+            this_._internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:forge.v1.CancelTask)
+  return target;
+}
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+::size_t CancelTask::ByteSizeLong(const MessageLite& base) {
+  const CancelTask& this_ = static_cast<const CancelTask&>(base);
+#else   // PROTOBUF_CUSTOM_VTABLE
+::size_t CancelTask::ByteSizeLong() const {
+  const CancelTask& this_ = *this;
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  // @@protoc_insertion_point(message_byte_size_start:forge.v1.CancelTask)
+  ::size_t total_size = 0;
+
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void)cached_has_bits;
+
+  ::_pbi::Prefetch5LinesFrom7Lines(&this_);
+  cached_has_bits = this_._impl_._has_bits_[0];
+  if (BatchCheckHasBit(cached_has_bits, 0x00000003U)) {
+    // string task_id = 1;
+    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      if (!this_._internal_task_id().empty()) {
+        total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                        this_._internal_task_id());
+      }
+    }
+    // string attempt_id = 2;
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      if (!this_._internal_attempt_id().empty()) {
+        total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                        this_._internal_attempt_id());
+      }
+    }
+  }
+  return this_.MaybeComputeUnknownFieldsSize(total_size,
+                                             &this_._impl_._cached_size_);
+}
+
+void CancelTask::MergeImpl(::google::protobuf::MessageLite& to_msg,
+                      const ::google::protobuf::MessageLite& from_msg) {
+   auto* const _this = static_cast<CancelTask*>(&to_msg);
+  auto& from = static_cast<const CancelTask&>(from_msg);
+  if constexpr (::_pbi::DebugHardenCheckHasBitConsistency()) {
+    from.CheckHasBitConsistency();
+  }
+  // @@protoc_insertion_point(class_specific_merge_from_start:forge.v1.CancelTask)
+  ABSL_DCHECK_NE(&from, _this);
+  ::uint32_t cached_has_bits = 0;
+  (void)cached_has_bits;
+
+  cached_has_bits = from._impl_._has_bits_[0];
+  if (BatchCheckHasBit(cached_has_bits, 0x00000003U)) {
+    if (CheckHasBit(cached_has_bits, 0x00000001U)) {
+      if (!from._internal_task_id().empty()) {
+        _this->_internal_set_task_id(from._internal_task_id());
+      } else {
+        if (_this->_impl_.task_id_.IsDefault()) {
+          _this->_internal_set_task_id("");
+        }
+      }
+    }
+    if (CheckHasBit(cached_has_bits, 0x00000002U)) {
+      if (!from._internal_attempt_id().empty()) {
+        _this->_internal_set_attempt_id(from._internal_attempt_id());
+      } else {
+        if (_this->_impl_.attempt_id_.IsDefault()) {
+          _this->_internal_set_attempt_id("");
+        }
+      }
+    }
+  }
+  _this->_impl_._has_bits_[0] |= cached_has_bits;
+  _this->_internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
+      from._internal_metadata_);
+}
+
+void CancelTask::CopyFrom(const CancelTask& from) {
+  // @@protoc_insertion_point(class_specific_copy_from_start:forge.v1.CancelTask)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+
+void CancelTask::InternalSwap(CancelTask* PROTOBUF_RESTRICT PROTOBUF_NONNULL other) {
+  using ::std::swap;
+  auto* arena = GetArena();
+  ABSL_DCHECK_EQ(arena, other->GetArena());
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  swap(_impl_._has_bits_[0], other->_impl_._has_bits_[0]);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.task_id_, &other->_impl_.task_id_, arena);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.attempt_id_, &other->_impl_.attempt_id_, arena);
+}
+
+::google::protobuf::Metadata CancelTask::GetMetadata() const {
+  return ::google::protobuf::Message::GetMetadataImpl(GetClassData()->full());
+}
+// ===================================================================
+
 TaskAccepted::TaskAccepted(::google::protobuf::Arena* PROTOBUF_NULLABLE arena)
 #if defined(PROTOBUF_CUSTOM_VTABLE)
     : ::google::protobuf::Message(arena, TaskAccepted_get_class_data()) {
@@ -4057,9 +4542,9 @@ TaskResult::TaskResult(
                offsetof(Impl_, exit_code_),
            reinterpret_cast<const char*>(&from._impl_) +
                offsetof(Impl_, exit_code_),
-           offsetof(Impl_, success_) -
+           offsetof(Impl_, cancelled_) -
                offsetof(Impl_, exit_code_) +
-               sizeof(Impl_::success_));
+               sizeof(Impl_::cancelled_));
 
   // @@protoc_insertion_point(copy_constructor:forge.v1.TaskResult)
 }
@@ -4077,9 +4562,9 @@ inline void TaskResult::SharedCtor(::_pb::Arena* PROTOBUF_NULLABLE arena) {
   ::memset(reinterpret_cast<char*>(&_impl_) +
                offsetof(Impl_, exit_code_),
            0,
-           offsetof(Impl_, success_) -
+           offsetof(Impl_, cancelled_) -
                offsetof(Impl_, exit_code_) +
-               sizeof(Impl_::success_));
+               sizeof(Impl_::cancelled_));
 }
 TaskResult::~TaskResult() {
   // @@protoc_insertion_point(destructor:forge.v1.TaskResult)
@@ -4147,10 +4632,10 @@ PROTOBUF_NOINLINE void TaskResult::Clear() {
       _impl_.attempt_id_.ClearNonDefaultToEmpty();
     }
   }
-  if (BatchCheckHasBit(cached_has_bits, 0x00000030U)) {
+  if (BatchCheckHasBit(cached_has_bits, 0x00000070U)) {
     ::memset(&_impl_.exit_code_, 0, static_cast<::size_t>(
-        reinterpret_cast<char*>(&_impl_.success_) -
-        reinterpret_cast<char*>(&_impl_.exit_code_)) + sizeof(_impl_.success_));
+        reinterpret_cast<char*>(&_impl_.cancelled_) -
+        reinterpret_cast<char*>(&_impl_.exit_code_)) + sizeof(_impl_.cancelled_));
   }
   _impl_._has_bits_.Clear();
   _internal_metadata_.Clear<::google::protobuf::UnknownFieldSet>();
@@ -4233,6 +4718,15 @@ PROTOBUF_NOINLINE void TaskResult::Clear() {
     }
   }
 
+  // bool cancelled = 7;
+  if (CheckHasBit(cached_has_bits, 0x00000040U)) {
+    if (this_._internal_cancelled() != 0) {
+      target = stream->EnsureSpace(target);
+      target = ::_pbi::WireFormatLite::WriteBoolToArray(
+          7, this_._internal_cancelled(), target);
+    }
+  }
+
   if (ABSL_PREDICT_FALSE(this_._internal_metadata_.have_unknown_fields())) {
     target =
         ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
@@ -4258,7 +4752,7 @@ PROTOBUF_NOINLINE void TaskResult::Clear() {
 
   ::_pbi::Prefetch5LinesFrom7Lines(&this_);
   cached_has_bits = this_._impl_._has_bits_[0];
-  if (BatchCheckHasBit(cached_has_bits, 0x0000003fU)) {
+  if (BatchCheckHasBit(cached_has_bits, 0x0000007fU)) {
     // string task_id = 1;
     if (CheckHasBit(cached_has_bits, 0x00000001U)) {
       if (!this_._internal_task_id().empty()) {
@@ -4300,6 +4794,12 @@ PROTOBUF_NOINLINE void TaskResult::Clear() {
         total_size += 2;
       }
     }
+    // bool cancelled = 7;
+    if (CheckHasBit(cached_has_bits, 0x00000040U)) {
+      if (this_._internal_cancelled() != 0) {
+        total_size += 2;
+      }
+    }
   }
   return this_.MaybeComputeUnknownFieldsSize(total_size,
                                              &this_._impl_._cached_size_);
@@ -4318,7 +4818,7 @@ void TaskResult::MergeImpl(::google::protobuf::MessageLite& to_msg,
   (void)cached_has_bits;
 
   cached_has_bits = from._impl_._has_bits_[0];
-  if (BatchCheckHasBit(cached_has_bits, 0x0000003fU)) {
+  if (BatchCheckHasBit(cached_has_bits, 0x0000007fU)) {
     if (CheckHasBit(cached_has_bits, 0x00000001U)) {
       if (!from._internal_task_id().empty()) {
         _this->_internal_set_task_id(from._internal_task_id());
@@ -4365,6 +4865,11 @@ void TaskResult::MergeImpl(::google::protobuf::MessageLite& to_msg,
         _this->_impl_.success_ = from._impl_.success_;
       }
     }
+    if (CheckHasBit(cached_has_bits, 0x00000040U)) {
+      if (from._internal_cancelled() != 0) {
+        _this->_impl_.cancelled_ = from._impl_.cancelled_;
+      }
+    }
   }
   _this->_impl_._has_bits_[0] |= cached_has_bits;
   _this->_internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
@@ -4390,8 +4895,8 @@ void TaskResult::InternalSwap(TaskResult* PROTOBUF_RESTRICT PROTOBUF_NONNULL oth
   ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.stderr_, &other->_impl_.stderr_, arena);
   ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.attempt_id_, &other->_impl_.attempt_id_, arena);
   ::google::protobuf::internal::memswap<
-      PROTOBUF_FIELD_OFFSET(TaskResult, _impl_.success_)
-      + sizeof(TaskResult::_impl_.success_)
+      PROTOBUF_FIELD_OFFSET(TaskResult, _impl_.cancelled_)
+      + sizeof(TaskResult::_impl_.cancelled_)
       - PROTOBUF_FIELD_OFFSET(TaskResult, _impl_.exit_code_)>(
           reinterpret_cast<char*>(&_impl_.exit_code_),
           reinterpret_cast<char*>(&other->_impl_.exit_code_));

@@ -77,6 +77,9 @@ public class RetryCoordinator {
 
 
         for (ForgeTask task : tasks) {
+            if (task.isCancelRequested()) {    
+                    continue;
+            }
 
             TaskAttempt latestAttempt =
                     taskAttemptRegistry

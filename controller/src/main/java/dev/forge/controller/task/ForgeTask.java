@@ -63,6 +63,12 @@ public class ForgeTask {
         nullable = false
     )
     private int maxAttempts;
+
+    @Column(
+        name = "cancel_requested",
+        nullable = false
+    )
+    private boolean cancelRequested;
     /*
      * Required by JPA.
      */
@@ -77,12 +83,14 @@ public class ForgeTask {
         int maxAttempts,
         int timeoutSeconds) {
 
-        this.timeoutSeconds = timeoutSeconds;
-        this.maxAttempts = maxAttempts; 
         this.id = id;
         this.command = command;
-        this.maxAttempts = maxAttempts;
-        this.timeoutSeconds = timeoutSeconds;
+
+        this.maxAttempts =
+                maxAttempts;
+
+        this.timeoutSeconds =
+                timeoutSeconds;
 
         this.arguments =
                 new ArrayList<>(arguments);
@@ -206,5 +214,50 @@ public class ForgeTask {
 
         this.stderr =
                 null;
+    }
+    public boolean isCancelRequested() {
+
+    return cancelRequested;
+}
+
+
+    public void requestCancellation() {
+
+        this.cancelRequested =
+                true;
+    }
+
+
+    public void clearCancellationRequest() {
+
+        this.cancelRequested =
+                false;
+    }
+
+
+    public void markCancelled() {
+
+        this.status =
+                TaskStatus.CANCELLED;
+    }
+    public void markCancelled(
+            int exitCode,
+            String stdout,
+            String stderr) {
+
+        this.exitCode =
+                exitCode;
+
+        this.stdout =
+                stdout;
+
+        this.stderr =
+                stderr;
+
+        this.cancelRequested =
+                true;
+
+        this.status =
+                TaskStatus.CANCELLED;
     }
 }

@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.UUID;
 
+import dev.forge.controller.grpc.WorkerRegistry;
+import dev.forge.proto.CancelTask;
 
 @Service
 public class TaskService {
@@ -86,6 +88,10 @@ public class TaskService {
 
 
         if (task == null) {
+                return false;
+        }
+        if (task.isCancelRequested()) {
+
                 return false;
         }
 
@@ -186,7 +192,22 @@ public class TaskService {
         if (task == null) {
             return null;
         }
+        if (task.isCancelRequested()) {
 
+                throw new IllegalArgumentException(
+                        "Task "
+                                + taskId
+                                + " cannot be retried because cancellation was requested"
+                );
+        }
+        if (task.isCancelRequested()) {
+
+        throw new IllegalArgumentException(
+                "Task "
+                        + taskId
+                        + " cannot be retried because cancellation was requested"
+        );
+}
 
         if (task.getStatus() != TaskStatus.LOST
                 && task.getStatus() != TaskStatus.FAILED) {
@@ -426,7 +447,162 @@ public class TaskService {
         System.out.println();
     }
 
+    public synchronized ForgeTask cancelTask(
+                String taskId) {
 
+        ForgeTask task =
+                taskRegistry.get(
+                        taskId
+                );
+
+
+        if (task == null) {
+
+                return null;
+        }
+
+
+        /*
+        * Repeated cancellation is idempotent.
+        */
+        if (task.getStatus()
+                == TaskStatus.CANCELLED) {
+
+                return task;
+        }
+
+
+        if (task.getStatus()
+                != TaskStatus.DISPATCHED
+                && task.getStatus()
+                != TaskStatus.RUNNING) {
+
+                throw new IllegalArgumentException(
+                        "Task "
+                                + taskId
+                                + " cannot be cancelled from status "
+                                + task.getStatus()
+                );
+        }
+
+
+        if (task.isCancelRequested()) {
+
+                return task;
+        }
+
+
+        TaskAttempt attempt =
+                taskAttemptRegistry
+                        .getLatestForTask(
+                                taskId
+                        );
+
+
+        if (attempt == null) {
+
+                throw new IllegalStateException(
+                        "Task "
+                                + taskId
+                                + " has no execution attempt"
+                );
+        }
+
+
+        if (attempt.getStatus()
+                != TaskAttemptStatus.DISPATCHED
+                && attempt.getStatus()
+                != TaskAttemptStatus.RUNNING) {
+
+                throw new IllegalArgumentException(
+                        "Attempt "
+                                + attempt.getId()
+                                + " cannot be cancelled from status "
+                                + attempt.getStatus()
+                );
+        }
+
+
+        /*
+        * Persist intent BEFORE sending the command.
+        *
+        * If the controller crashes immediately afterward,
+        * we still remember that this task must not retry.
+        */
+        task.requestCancellation();
+
+        taskRegistry.save(
+                task
+        );
+
+
+        WorkerState worker =
+                WorkerRegistry.get(
+                        attempt.getWorkerId()
+                );
+
+
+        if (worker == null) {
+
+                throw new IllegalStateException(
+                        "Worker "
+                                + attempt.getWorkerId()
+                                + " is unavailable; cancellation request was recorded"
+                );
+        }
+
+
+        CancelTask cancellation =
+                CancelTask
+                        .newBuilder()
+                        .setTaskId(
+                                taskId
+                        )
+                        .setAttemptId(
+                                attempt.getId()
+                        )
+                        .build();
+
+
+        ControllerMessage message =
+                ControllerMessage
+                        .newBuilder()
+                        .setCancelTask(
+                                cancellation
+                        )
+                        .build();
+
+
+        boolean sent =
+                worker.sendCommand(
+                        message
+                );
+
+
+        if (!sent) {
+
+                throw new IllegalStateException(
+                        "Unable to deliver cancellation to worker "
+                                + attempt.getWorkerId()
+                                + "; cancellation request was recorded"
+                );
+        }
+
+
+        System.out.println(
+                "■ CANCELLATION REQUESTED: task="
+                        + taskId
+                        + " attempt="
+                        + attempt.getId()
+                        + " worker="
+                        + attempt.getWorkerId()
+        );
+
+
+        return taskRegistry.get(
+                taskId
+        );
+    }
     public ForgeTask getTask(
             String taskId) {
 

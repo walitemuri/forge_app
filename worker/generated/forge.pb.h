@@ -55,6 +55,14 @@ extern const ::google::protobuf::internal::DescriptorTable descriptor_table_forg
 }  // extern "C"
 namespace forge {
 namespace v1 {
+class CancelTask;
+struct CancelTaskGlobalsTypeInternal;
+#ifndef PROTOBUF_MESSAGE_GLOBALS
+extern CancelTaskGlobalsTypeInternal CancelTask_globals_;
+extern const ::google::protobuf::internal::ClassDataFull CancelTask_class_data_;
+#else
+extern const CancelTaskGlobalsTypeInternal CancelTask_globals_;
+#endif  // PROTOBUF_MESSAGE_GLOBALS
 class ControllerMessage;
 struct ControllerMessageGlobalsTypeInternal;
 #ifndef PROTOBUF_MESSAGE_GLOBALS
@@ -720,7 +728,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED TaskResult final : public ::google:
   [[nodiscard]] static const TaskResult& default_instance() {
     return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<TaskResult>(&TaskResult_globals_);
   }
-  static constexpr int kIndexInFileMessages = 6;
+  static constexpr int kIndexInFileMessages = 7;
   friend void swap(TaskResult& a, TaskResult& b) { a.Swap(&b); }
   inline void Swap(TaskResult* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -818,6 +826,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED TaskResult final : public ::google:
     kAttemptIdFieldNumber = 6,
     kExitCodeFieldNumber = 2,
     kSuccessFieldNumber = 5,
+    kCancelledFieldNumber = 7,
   };
   // string task_id = 1;
   void clear_task_id() ;
@@ -899,11 +908,21 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED TaskResult final : public ::google:
   void _internal_set_success(bool value);
 
   public:
+  // bool cancelled = 7;
+  void clear_cancelled() ;
+  [[nodiscard]] bool cancelled() const;
+  void set_cancelled(bool value);
+
+  private:
+  bool _internal_cancelled() const;
+  void _internal_set_cancelled(bool value);
+
+  public:
   // @@protoc_insertion_point(class_scope:forge.v1.TaskResult)
  private:
   class _Internal;
   using ParseTableT_ =
-      ::google::protobuf::internal::TcParseTable<3, 6,
+      ::google::protobuf::internal::TcParseTable<3, 7,
                           0, 57,
                           2>;
   static constexpr ParseTableT_ InternalGenerateParseTable_(
@@ -938,6 +957,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED TaskResult final : public ::google:
     ::google::protobuf::internal::ArenaStringPtr attempt_id_;
     ::int32_t exit_code_;
     bool success_;
+    bool cancelled_;
     PROTOBUF_TSAN_DECLARE_MEMBER
   };
   union { Impl_ _impl_; };
@@ -1282,7 +1302,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED TaskAccepted final : public ::googl
   [[nodiscard]] static const TaskAccepted& default_instance() {
     return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<TaskAccepted>(&TaskAccepted_globals_);
   }
-  static constexpr int kIndexInFileMessages = 5;
+  static constexpr int kIndexInFileMessages = 6;
   friend void swap(TaskAccepted& a, TaskAccepted& b) { a.Swap(&b); }
   inline void Swap(TaskAccepted* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -1505,7 +1525,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RegisterWorkerResponse final : publ
   [[nodiscard]] static const RegisterWorkerResponse& default_instance() {
     return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<RegisterWorkerResponse>(&RegisterWorkerResponse_globals_);
   }
-  static constexpr int kIndexInFileMessages = 8;
+  static constexpr int kIndexInFileMessages = 9;
   friend void swap(RegisterWorkerResponse& a, RegisterWorkerResponse& b) { a.Swap(&b); }
   inline void Swap(RegisterWorkerResponse* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -1723,7 +1743,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED RegisterWorkerRequest final : publi
   [[nodiscard]] static const RegisterWorkerRequest& default_instance() {
     return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<RegisterWorkerRequest>(&RegisterWorkerRequest_globals_);
   }
-  static constexpr int kIndexInFileMessages = 7;
+  static constexpr int kIndexInFileMessages = 8;
   friend void swap(RegisterWorkerRequest& a, RegisterWorkerRequest& b) { a.Swap(&b); }
   inline void Swap(RegisterWorkerRequest* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -1987,7 +2007,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED HeartbeatResponse final : public ::
   [[nodiscard]] static const HeartbeatResponse& default_instance() {
     return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<HeartbeatResponse>(&HeartbeatResponse_globals_);
   }
-  static constexpr int kIndexInFileMessages = 10;
+  static constexpr int kIndexInFileMessages = 11;
   friend void swap(HeartbeatResponse& a, HeartbeatResponse& b) { a.Swap(&b); }
   inline void Swap(HeartbeatResponse* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -2188,7 +2208,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED HeartbeatRequest final : public ::g
   [[nodiscard]] static const HeartbeatRequest& default_instance() {
     return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<HeartbeatRequest>(&HeartbeatRequest_globals_);
   }
-  static constexpr int kIndexInFileMessages = 9;
+  static constexpr int kIndexInFileMessages = 10;
   friend void swap(HeartbeatRequest& a, HeartbeatRequest& b) { a.Swap(&b); }
   inline void Swap(HeartbeatRequest* PROTOBUF_NONNULL other) {
     if (other == this) return;
@@ -2367,6 +2387,229 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED HeartbeatRequest final : public ::g
     double cpu_usage_percent_;
     ::uint64_t memory_used_bytes_;
     ::uint32_t running_tasks_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_forge_2eproto;
+};
+// -------------------------------------------------------------------
+
+class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED CancelTask final : public ::google::protobuf::Message
+/* @@protoc_insertion_point(class_definition:forge.v1.CancelTask) */ {
+ public:
+  inline CancelTask() : CancelTask(nullptr) {}
+  ~CancelTask() PROTOBUF_FINAL;
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void operator delete(CancelTask* PROTOBUF_NONNULL msg, ::std::destroying_delete_t) {
+    SharedDtor(*msg);
+    ::google::protobuf::internal::SizedDelete(msg, sizeof(CancelTask));
+  }
+#endif
+
+  template <typename = void>
+  explicit constexpr CancelTask(::google::protobuf::internal::ConstantInitialized,
+                           const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL
+                               class_data);
+
+  inline CancelTask(const CancelTask& from) : CancelTask(nullptr, from) {}
+  inline CancelTask(CancelTask&& from) noexcept : CancelTask(nullptr, ::std::move(from)) {}
+  inline CancelTask& operator=(const CancelTask& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline CancelTask& operator=(CancelTask&& from) noexcept {
+    if (this == &from) return *this;
+    if (::google::protobuf::internal::CanMoveWithInternalSwap(GetArena(), from.GetArena())) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  [[nodiscard]] inline const ::google::protobuf::UnknownFieldSet& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance);
+  }
+  [[nodiscard]] inline ::google::protobuf::UnknownFieldSet* PROTOBUF_NONNULL
+  mutable_unknown_fields() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<::google::protobuf::UnknownFieldSet>();
+  }
+
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL descriptor() {
+    return GetDescriptor();
+  }
+  [[nodiscard]] static const ::google::protobuf::Descriptor* PROTOBUF_NONNULL
+  GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  [[nodiscard]] static const ::google::protobuf::Reflection* PROTOBUF_NONNULL GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  [[nodiscard]] static const CancelTask& default_instance() {
+    return *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<CancelTask>(&CancelTask_globals_);
+  }
+  static constexpr int kIndexInFileMessages = 5;
+  friend void swap(CancelTask& a, CancelTask& b) { a.Swap(&b); }
+  inline void Swap(CancelTask* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    if (::google::protobuf::internal::CanUseInternalSwap(GetArena(), other->GetArena())) {
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(CancelTask* PROTOBUF_NONNULL other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  [[nodiscard]] CancelTask* PROTOBUF_NONNULL
+  New(::google::protobuf::Arena* PROTOBUF_NULLABLE arena = nullptr) const {
+    return ::google::protobuf::Message::DefaultConstruct<CancelTask>(arena);
+  }
+  using ::google::protobuf::Message::CopyFrom;
+  void CopyFrom(const CancelTask& from);
+  using ::google::protobuf::Message::MergeFrom;
+  void MergeFrom(const CancelTask& from) { CancelTask::MergeImpl(*this, from); }
+
+  private:
+  static void MergeImpl(::google::protobuf::MessageLite& to_msg,
+                        const ::google::protobuf::MessageLite& from_msg);
+
+  public:
+  [[nodiscard]] bool IsInitialized() const {
+    return true;
+  }
+  ABSL_ATTRIBUTE_REINITIALIZES void Clear() PROTOBUF_FINAL;
+  #if defined(PROTOBUF_CUSTOM_VTABLE)
+  private:
+  [[nodiscard]] static ::size_t ByteSizeLong(const ::google::protobuf::MessageLite& msg);
+  [[nodiscard]] static ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      const ::google::protobuf::MessageLite& msg, ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream);
+
+  public:
+  [[nodiscard]] ::size_t ByteSizeLong() const { return ByteSizeLong(*this); }
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const {
+    return _InternalSerialize(*this, target, stream);
+  }
+  #else   // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] ::size_t ByteSizeLong() const final;
+  [[nodiscard]] ::uint8_t* PROTOBUF_NONNULL _InternalSerialize(
+      ::uint8_t* PROTOBUF_NONNULL target,
+      ::google::protobuf::io::EpsCopyOutputStream* PROTOBUF_NONNULL stream) const final;
+  #endif  // PROTOBUF_CUSTOM_VTABLE
+  [[nodiscard]] int GetCachedSize() const {
+    return _impl_._cached_size_.Get();
+  }
+
+  private:
+  void SharedCtor(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static void SharedDtor(MessageLite& self);
+  void InternalSwap(CancelTask* PROTOBUF_NONNULL other);
+ private:
+  template <typename T>
+  friend ::absl::string_view(::google::protobuf::internal::GetAnyMessageName)();
+  static ::absl::string_view FullMessageName() { return "forge.v1.CancelTask"; }
+
+  explicit CancelTask(::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  CancelTask(::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const CancelTask& from);
+  CancelTask(
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, CancelTask&& from) noexcept
+      : CancelTask(arena) {
+    *this = ::std::move(from);
+  }
+  const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL GetClassData() const PROTOBUF_FINAL;
+  static void* PROTOBUF_NONNULL PlacementNew_(
+      const void* PROTOBUF_NONNULL, void* PROTOBUF_NONNULL mem,
+      ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+  static constexpr auto InternalNewImpl_();
+
+ public:
+  static constexpr auto InternalGenerateClassData_(
+      const MessageLite& prototype,
+      const ::google::protobuf::internal::TcParseTableBase* PROTOBUF_NULLABLE tc_table = nullptr);
+
+  [[nodiscard]] ::google::protobuf::Metadata GetMetadata() const;
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+  enum : int {
+    kTaskIdFieldNumber = 1,
+    kAttemptIdFieldNumber = 2,
+  };
+  // string task_id = 1;
+  void clear_task_id() ;
+  [[nodiscard]] const ::std::string& task_id() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_task_id(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_task_id();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_task_id();
+  void set_allocated_task_id(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_task_id() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_task_id(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_task_id();
+
+  public:
+  // string attempt_id = 2;
+  void clear_attempt_id() ;
+  [[nodiscard]] const ::std::string& attempt_id() const;
+  template <typename Arg_ = const ::std::string&, typename... Args_>
+  void set_attempt_id(Arg_&& arg, Args_... args);
+  ::std::string* PROTOBUF_NONNULL mutable_attempt_id();
+  [[nodiscard]] ::std::string* PROTOBUF_NULLABLE release_attempt_id();
+  void set_allocated_attempt_id(::std::string* PROTOBUF_NULLABLE value);
+
+  private:
+  const ::std::string& _internal_attempt_id() const;
+  PROTOBUF_ALWAYS_INLINE void _internal_set_attempt_id(const ::std::string& value);
+  ::std::string* PROTOBUF_NONNULL _internal_mutable_attempt_id();
+
+  public:
+  // @@protoc_insertion_point(class_scope:forge.v1.CancelTask)
+ private:
+  class _Internal;
+  using ParseTableT_ =
+      ::google::protobuf::internal::TcParseTable<1, 2,
+                          0, 45,
+                          2>;
+  static constexpr ParseTableT_ InternalGenerateParseTable_(
+      const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL class_data);
+  friend class ::google::protobuf::internal::TcParser;
+  #ifndef PROTOBUF_MESSAGE_GLOBALS
+  static const ParseTableT_ _table_;
+  #endif
+
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  friend ::google::protobuf::internal::PrivateAccess;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+    inline explicit constexpr Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                                    ::google::protobuf::internal::ConstantInitialized) noexcept;
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena);
+    inline explicit Impl_(
+        ::google::protobuf::internal::InternalVisibility visibility,
+        ::google::protobuf::Arena* PROTOBUF_NULLABLE arena, const Impl_& from,
+        const CancelTask& from_msg);
+    ::google::protobuf::internal::HasBits<1> _has_bits_;
+    ::google::protobuf::internal::CachedSize _cached_size_;
+    ::google::protobuf::internal::ArenaStringPtr task_id_;
+    ::google::protobuf::internal::ArenaStringPtr attempt_id_;
     PROTOBUF_TSAN_DECLARE_MEMBER
   };
   union { Impl_ _impl_; };
@@ -2728,6 +2971,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED ControllerMessage final : public ::
   }
   enum PayloadCase {
     kTaskAssignment = 1,
+    kCancelTask = 2,
     PAYLOAD_NOT_SET = 0,
   };
   static constexpr int kIndexInFileMessages = 1;
@@ -2823,6 +3067,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED ControllerMessage final : public ::
   // accessors -------------------------------------------------------
   enum : int {
     kTaskAssignmentFieldNumber = 1,
+    kCancelTaskFieldNumber = 2,
   };
   // .forge.v1.TaskAssignment task_assignment = 1;
   [[nodiscard]] bool has_task_assignment()
@@ -2844,17 +3089,38 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED ControllerMessage final : public ::
   ::forge::v1::TaskAssignment* PROTOBUF_NONNULL _internal_mutable_task_assignment();
 
   public:
+  // .forge.v1.CancelTask cancel_task = 2;
+  [[nodiscard]] bool has_cancel_task()
+      const;
+  private:
+  bool _internal_has_cancel_task() const;
+
+  public:
+  void clear_cancel_task() ;
+  [[nodiscard]] const ::forge::v1::CancelTask& cancel_task() const;
+  [[nodiscard]] ::forge::v1::CancelTask* PROTOBUF_NULLABLE release_cancel_task();
+  ::forge::v1::CancelTask* PROTOBUF_NONNULL mutable_cancel_task();
+  void set_allocated_cancel_task(::forge::v1::CancelTask* PROTOBUF_NULLABLE value);
+  void unsafe_arena_set_allocated_cancel_task(::forge::v1::CancelTask* PROTOBUF_NULLABLE value);
+  ::forge::v1::CancelTask* PROTOBUF_NULLABLE unsafe_arena_release_cancel_task();
+
+  private:
+  const ::forge::v1::CancelTask& _internal_cancel_task() const;
+  ::forge::v1::CancelTask* PROTOBUF_NONNULL _internal_mutable_cancel_task();
+
+  public:
   void clear_payload();
   PayloadCase payload_case() const;
   // @@protoc_insertion_point(class_scope:forge.v1.ControllerMessage)
  private:
   class _Internal;
   void set_has_task_assignment();
+  void set_has_cancel_task();
   [[nodiscard]] inline bool has_payload() const;
   inline void clear_has_payload();
   using ParseTableT_ =
-      ::google::protobuf::internal::TcParseTable<0, 1,
-                          1, 0,
+      ::google::protobuf::internal::TcParseTable<0, 2,
+                          2, 0,
                           2>;
   static constexpr ParseTableT_ InternalGenerateParseTable_(
       const ::google::protobuf::internal::ClassData* PROTOBUF_NONNULL class_data);
@@ -2884,6 +3150,7 @@ class  PROTOBUF_FUTURE_ADD_EARLY_WARN_UNUSED ControllerMessage final : public ::
       constexpr PayloadUnion() : _constinit_{} {}
       ::google::protobuf::internal::ConstantInitialized _constinit_;
       ::forge::v1::TaskAssignment* PROTOBUF_NULLABLE task_assignment_;
+      ::forge::v1::CancelTask* PROTOBUF_NULLABLE cancel_task_;
     } payload_;
     ::google::protobuf::internal::CachedSize _cached_size_;
     ::uint32_t _oneof_case_[1];
@@ -3329,6 +3596,88 @@ inline ::forge::v1::TaskAssignment* PROTOBUF_NONNULL ControllerMessage::mutable_
     ABSL_ATTRIBUTE_LIFETIME_BOUND {
   ::forge::v1::TaskAssignment* _msg = _internal_mutable_task_assignment();
   // @@protoc_insertion_point(field_mutable:forge.v1.ControllerMessage.task_assignment)
+  return _msg;
+}
+
+// .forge.v1.CancelTask cancel_task = 2;
+inline bool ControllerMessage::has_cancel_task() const {
+  return payload_case() == kCancelTask;
+}
+inline bool ControllerMessage::_internal_has_cancel_task() const {
+  return payload_case() == kCancelTask;
+}
+inline void ControllerMessage::set_has_cancel_task() {
+  _impl_._oneof_case_[0] = kCancelTask;
+}
+inline void ControllerMessage::clear_cancel_task() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (payload_case() == kCancelTask) {
+    if (GetArena() == nullptr) {
+      delete _impl_.payload_.cancel_task_;
+    } else if (::google::protobuf::internal::DebugHardenClearOneofMessageOnArena()) {
+      ::google::protobuf::internal::MaybePoisonAfterClear(_impl_.payload_.cancel_task_);
+    }
+    clear_has_payload();
+  }
+}
+inline ::forge::v1::CancelTask* PROTOBUF_NULLABLE ControllerMessage::release_cancel_task() {
+  // @@protoc_insertion_point(field_release:forge.v1.ControllerMessage.cancel_task)
+  if (payload_case() == kCancelTask) {
+    clear_has_payload();
+    auto* temp = _impl_.payload_.cancel_task_;
+    if (GetArena() != nullptr) {
+      temp = ::google::protobuf::internal::DuplicateIfNonNull(temp);
+    }
+    _impl_.payload_.cancel_task_ = nullptr;
+    return temp;
+  } else {
+    return nullptr;
+  }
+}
+inline const ::forge::v1::CancelTask& ControllerMessage::_internal_cancel_task() const {
+  return payload_case() == kCancelTask ? static_cast<const ::forge::v1::CancelTask&>(*_impl_.payload_.cancel_task_)
+                     : *::google::protobuf::internal::MessageGlobalsBase::ToDefaultInstance<::forge::v1::CancelTask>(&::forge::v1::CancelTask_globals_);
+}
+inline const ::forge::v1::CancelTask& ControllerMessage::cancel_task() const ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:forge.v1.ControllerMessage.cancel_task)
+  return _internal_cancel_task();
+}
+inline ::forge::v1::CancelTask* PROTOBUF_NULLABLE ControllerMessage::unsafe_arena_release_cancel_task() {
+  // @@protoc_insertion_point(field_unsafe_arena_release:forge.v1.ControllerMessage.cancel_task)
+  if (payload_case() == kCancelTask) {
+    clear_has_payload();
+    auto* temp = _impl_.payload_.cancel_task_;
+    _impl_.payload_.cancel_task_ = nullptr;
+    return temp;
+  } else {
+    return nullptr;
+  }
+}
+inline void ControllerMessage::unsafe_arena_set_allocated_cancel_task(
+    ::forge::v1::CancelTask* PROTOBUF_NULLABLE value) {
+  // We rely on the oneof clear method to free the earlier contents
+  // of this oneof. We can directly use the pointer we're given to
+  // set the new value.
+  clear_payload();
+  if (value) {
+    set_has_cancel_task();
+    _impl_.payload_.cancel_task_ = value;
+  }
+  // @@protoc_insertion_point(field_unsafe_arena_set_allocated:forge.v1.ControllerMessage.cancel_task)
+}
+inline ::forge::v1::CancelTask* PROTOBUF_NONNULL ControllerMessage::_internal_mutable_cancel_task() {
+  if (payload_case() != kCancelTask) {
+    clear_payload();
+    set_has_cancel_task();
+    _impl_.payload_.cancel_task_ = 
+        ::google::protobuf::Message::DefaultConstruct<::forge::v1::CancelTask>(GetArena());
+  }
+  return _impl_.payload_.cancel_task_;
+}
+inline ::forge::v1::CancelTask* PROTOBUF_NONNULL ControllerMessage::mutable_cancel_task()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  ::forge::v1::CancelTask* _msg = _internal_mutable_cancel_task();
+  // @@protoc_insertion_point(field_mutable:forge.v1.ControllerMessage.cancel_task)
   return _msg;
 }
 
@@ -4019,6 +4368,138 @@ inline void TaskAssignment::_internal_set_timeout_seconds(::uint32_t value) {
 
 // -------------------------------------------------------------------
 
+// CancelTask
+
+// string task_id = 1;
+inline void CancelTask::clear_task_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.task_id_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+}
+inline const ::std::string& CancelTask::task_id() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:forge.v1.CancelTask.task_id)
+  return _internal_task_id();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void CancelTask::set_task_id(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  _impl_.task_id_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:forge.v1.CancelTask.task_id)
+}
+inline ::std::string* PROTOBUF_NONNULL CancelTask::mutable_task_id()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  ::std::string* _s = _internal_mutable_task_id();
+  // @@protoc_insertion_point(field_mutable:forge.v1.CancelTask.task_id)
+  return _s;
+}
+inline const ::std::string& CancelTask::_internal_task_id() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.task_id_.Get();
+}
+inline void CancelTask::_internal_set_task_id(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.task_id_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL CancelTask::_internal_mutable_task_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.task_id_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE CancelTask::release_task_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:forge.v1.CancelTask.task_id)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000001U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  auto* released = _impl_.task_id_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.task_id_.Set("", GetArena());
+  }
+  return released;
+}
+inline void CancelTask::set_allocated_task_id(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000001U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000001U);
+  }
+  _impl_.task_id_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.task_id_.IsDefault()) {
+    _impl_.task_id_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:forge.v1.CancelTask.task_id)
+}
+
+// string attempt_id = 2;
+inline void CancelTask::clear_attempt_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.attempt_id_.ClearToEmpty();
+  ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+}
+inline const ::std::string& CancelTask::attempt_id() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:forge.v1.CancelTask.attempt_id)
+  return _internal_attempt_id();
+}
+template <typename Arg_, typename... Args_>
+PROTOBUF_ALWAYS_INLINE void CancelTask::set_attempt_id(Arg_&& arg, Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  _impl_.attempt_id_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:forge.v1.CancelTask.attempt_id)
+}
+inline ::std::string* PROTOBUF_NONNULL CancelTask::mutable_attempt_id()
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  ::std::string* _s = _internal_mutable_attempt_id();
+  // @@protoc_insertion_point(field_mutable:forge.v1.CancelTask.attempt_id)
+  return _s;
+}
+inline const ::std::string& CancelTask::_internal_attempt_id() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.attempt_id_.Get();
+}
+inline void CancelTask::_internal_set_attempt_id(const ::std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.attempt_id_.Set(value, GetArena());
+}
+inline ::std::string* PROTOBUF_NONNULL CancelTask::_internal_mutable_attempt_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.attempt_id_.Mutable( GetArena());
+}
+inline ::std::string* PROTOBUF_NULLABLE CancelTask::release_attempt_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:forge.v1.CancelTask.attempt_id)
+  if (!CheckHasBit(_impl_._has_bits_[0], 0x00000002U)) {
+    return nullptr;
+  }
+  ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+  auto* released = _impl_.attempt_id_.Release();
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString()) {
+    _impl_.attempt_id_.Set("", GetArena());
+  }
+  return released;
+}
+inline void CancelTask::set_allocated_attempt_id(::std::string* PROTOBUF_NULLABLE value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  if (value != nullptr) {
+    SetHasBit(_impl_._has_bits_[0], 0x00000002U);
+  } else {
+    ClearHasBit(_impl_._has_bits_[0], 0x00000002U);
+  }
+  _impl_.attempt_id_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.attempt_id_.IsDefault()) {
+    _impl_.attempt_id_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:forge.v1.CancelTask.attempt_id)
+}
+
+// -------------------------------------------------------------------
+
 // TaskAccepted
 
 // string task_id = 1;
@@ -4455,6 +4936,30 @@ inline void TaskResult::set_allocated_attempt_id(::std::string* PROTOBUF_NULLABL
     _impl_.attempt_id_.Set("", GetArena());
   }
   // @@protoc_insertion_point(field_set_allocated:forge.v1.TaskResult.attempt_id)
+}
+
+// bool cancelled = 7;
+inline void TaskResult::clear_cancelled() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.cancelled_ = false;
+  ClearHasBit(_impl_._has_bits_[0], 0x00000040U);
+}
+inline bool TaskResult::cancelled() const {
+  // @@protoc_insertion_point(field_get:forge.v1.TaskResult.cancelled)
+  return _internal_cancelled();
+}
+inline void TaskResult::set_cancelled(bool value) {
+  _internal_set_cancelled(value);
+  SetHasBit(_impl_._has_bits_[0], 0x00000040U);
+  // @@protoc_insertion_point(field_set:forge.v1.TaskResult.cancelled)
+}
+inline bool TaskResult::_internal_cancelled() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.cancelled_;
+}
+inline void TaskResult::_internal_set_cancelled(bool value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.cancelled_ = value;
 }
 
 // -------------------------------------------------------------------

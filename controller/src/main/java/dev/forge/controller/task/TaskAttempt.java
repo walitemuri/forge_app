@@ -190,4 +190,24 @@ public class TaskAttempt {
         this.finishedAt =
                 Instant.now();
     }
+    public void markCancelled(
+        int exitCode,
+        String stdout,
+        String stderr) {
+
+        this.exitCode =
+                exitCode;
+
+        this.stdout =
+                stdout;
+
+        this.stderr =
+                stderr;
+
+        this.finishedAt =
+                Instant.now();
+
+        this.status =
+                TaskAttemptStatus.CANCELLED;
+    }
 }

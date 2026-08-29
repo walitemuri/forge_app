@@ -13,5 +13,7 @@ public enum TaskAttemptStatus {
 
     FAILED,
 
-    LOST
+    LOST,
+
+    CANCELLED
 }

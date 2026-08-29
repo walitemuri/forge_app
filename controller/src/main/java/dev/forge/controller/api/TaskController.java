@@ -248,4 +248,53 @@ public class TaskController {
                 tasks
         );
     }
+    @PostMapping("/{taskId}/cancel")
+    public ResponseEntity<?> cancelTask(
+                @PathVariable String taskId) {
+
+        try {
+
+                ForgeTask task =
+                        taskService.cancelTask(
+                                taskId
+                        );
+
+
+                if (task == null) {
+
+                return ResponseEntity
+                        .notFound()
+                        .build();
+                }
+
+
+                return ResponseEntity
+                        .accepted()
+                        .body(
+                                TaskResponse.from(
+                                        task
+                                )
+                        );
+        }
+        catch (IllegalArgumentException exception) {
+
+                return ResponseEntity
+                        .status(
+                                HttpStatus.CONFLICT
+                        )
+                        .body(
+                                exception.getMessage()
+                        );
+        }
+        catch (IllegalStateException exception) {
+
+                return ResponseEntity
+                        .status(
+                                HttpStatus.SERVICE_UNAVAILABLE
+                        )
+                        .body(
+                                exception.getMessage()
+                        );
+        }
+        }
 }

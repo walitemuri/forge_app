@@ -3,7 +3,6 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
-#include <cstring>
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/wait.h>
@@ -14,7 +13,9 @@
 
 namespace {
 
-void setNonBlocking(int fd) {
+
+void setNonBlocking(
+        int fd) {
 
     int flags =
         fcntl(
@@ -88,13 +89,40 @@ void readAvailable(
     }
 }
 
+
+void signalProcessGroup(
+        pid_t pid,
+        int signal) {
+
+    /*
+     * Negative PID means:
+     * send signal to the entire process group.
+     */
+    if (kill(
+            -pid,
+            signal
+        ) == -1) {
+
+        /*
+         * Fallback if process-group creation
+         * somehow failed.
+         */
+        kill(
+            pid,
+            signal
+        );
+    }
+}
+
+
 }
 
 
 ProcessResult executeProcess(
         const std::string& command,
         const std::vector<std::string>& arguments,
-        std::uint32_t timeoutSeconds) {
+        std::uint32_t timeoutSeconds,
+        const CancellationFlag& cancellationFlag) {
 
     int stdoutPipe[2];
 
@@ -108,6 +136,7 @@ ProcessResult executeProcess(
             -1,
             "",
             "Failed to create process pipes",
+            false,
             false
         };
     }
@@ -130,6 +159,7 @@ ProcessResult executeProcess(
             -1,
             "",
             "Failed to fork process",
+            false,
             false
         };
     }
@@ -142,10 +172,8 @@ ProcessResult executeProcess(
     if (pid == 0) {
 
         /*
-         * Give this task its own process group.
-         *
-         * That lets the worker kill not only the direct
-         * child, but also subprocesses created by it.
+         * Every Forge execution gets its own process
+         * group so cancellation also kills subprocesses.
          */
         setpgid(
             0,
@@ -153,13 +181,8 @@ ProcessResult executeProcess(
         );
 
 
-        close(
-            stdoutPipe[0]
-        );
-
-        close(
-            stderrPipe[0]
-        );
+        close(stdoutPipe[0]);
+        close(stderrPipe[0]);
 
 
         dup2(
@@ -173,13 +196,8 @@ ProcessResult executeProcess(
         );
 
 
-        close(
-            stdoutPipe[1]
-        );
-
-        close(
-            stderrPipe[1]
-        );
+        close(stdoutPipe[1]);
+        close(stderrPipe[1]);
 
 
         std::vector<char*> argv;
@@ -235,24 +253,14 @@ ProcessResult executeProcess(
     // PARENT
     // =================================================
 
-    /*
-     * Also attempt to establish the group from the
-     * parent side. Either parent or child may win
-     * the scheduling race, which is fine.
-     */
     setpgid(
         pid,
         pid
     );
 
 
-    close(
-        stdoutPipe[1]
-    );
-
-    close(
-        stderrPipe[1]
-    );
+    close(stdoutPipe[1]);
+    close(stderrPipe[1]);
 
 
     setNonBlocking(
@@ -278,25 +286,131 @@ ProcessResult executeProcess(
     bool timedOut =
         false;
 
+    bool cancelled =
+        false;
+
+    bool forceKillSent =
+        false;
+
+    bool childExited =
+        false;
+
+
+    int status =
+        0;
+
 
     const auto startedAt =
         std::chrono::steady_clock::now();
 
 
+    auto cancellationStartedAt =
+        startedAt;
+
+
     while (stdoutOpen
-            || stderrOpen) {
+            || stderrOpen
+            || !childExited) {
+
+        const auto now =
+            std::chrono::steady_clock::now();
+
 
         /*
-         * timeoutSeconds == 0 means unlimited.
+         * Check whether the child has exited without
+         * blocking this executor thread.
          */
-        if (!timedOut
+        if (!childExited) {
+
+            pid_t waitResult =
+                waitpid(
+                    pid,
+                    &status,
+                    WNOHANG
+                );
+
+
+            if (waitResult == pid) {
+
+                childExited =
+                    true;
+            }
+        }
+
+
+        // =============================================
+        // User/controller cancellation
+        // =============================================
+
+        if (!cancelled
+                && cancellationFlag
+                && cancellationFlag->load()) {
+
+            cancelled =
+                true;
+
+            cancellationStartedAt =
+                now;
+
+
+            /*
+             * First ask the process to terminate
+             * gracefully.
+             */
+            signalProcessGroup(
+                pid,
+                SIGTERM
+            );
+        }
+
+
+        /*
+         * Give SIGTERM two seconds.
+         *
+         * We still target the process group even if
+         * the direct child exited because descendants
+         * may remain alive.
+         */
+        if (cancelled
+                && !forceKillSent) {
+
+            const auto cancellationElapsed =
+                std::chrono::duration_cast<
+                    std::chrono::seconds
+                >(
+                    now
+                    - cancellationStartedAt
+                );
+
+
+            if (cancellationElapsed.count()
+                    >= 2) {
+
+                signalProcessGroup(
+                    pid,
+                    SIGKILL
+                );
+
+
+                forceKillSent =
+                    true;
+            }
+        }
+
+
+        // =============================================
+        // Execution timeout
+        // =============================================
+
+        if (!cancelled
+                && !timedOut
                 && timeoutSeconds > 0) {
 
             const auto elapsed =
                 std::chrono::duration_cast<
                     std::chrono::seconds
                 >(
-                    std::chrono::steady_clock::now()
+                    now
                     - startedAt
                 );
 
@@ -307,28 +421,21 @@ ProcessResult executeProcess(
                 timedOut =
                     true;
 
+                forceKillSent =
+                    true;
 
-                /*
-                 * Negative PID targets the entire
-                 * process group.
-                 */
-                if (kill(
-                        -pid,
-                        SIGKILL
-                    ) == -1) {
 
-                    /*
-                     * Fallback in case process-group
-                     * establishment somehow failed.
-                     */
-                    kill(
-                        pid,
-                        SIGKILL
-                    );
-                }
+                signalProcessGroup(
+                    pid,
+                    SIGKILL
+                );
             }
         }
 
+
+        // =============================================
+        // Drain stdout / stderr
+        // =============================================
 
         pollfd descriptors[2]{};
 
@@ -353,7 +460,7 @@ ProcessResult executeProcess(
             POLLIN | POLLHUP;
 
 
-        int result =
+        int pollResult =
             poll(
                 descriptors,
                 2,
@@ -361,7 +468,7 @@ ProcessResult executeProcess(
             );
 
 
-        if (result < 0
+        if (pollResult < 0
                 && errno != EINTR) {
 
             break;
@@ -397,15 +504,18 @@ ProcessResult executeProcess(
     }
 
 
-    int status =
-        0;
+    /*
+     * If waitpid(WNOHANG) never reaped the child,
+     * reap it now.
+     */
+    if (!childExited) {
 
-
-    waitpid(
-        pid,
-        &status,
-        0
-    );
+        waitpid(
+            pid,
+            &status,
+            0
+        );
+    }
 
 
     int exitCode =
@@ -414,9 +524,6 @@ ProcessResult executeProcess(
 
     if (timedOut) {
 
-        /*
-         * 124 is the conventional timeout exit code.
-         */
         exitCode =
             124;
 
@@ -436,20 +543,38 @@ ProcessResult executeProcess(
             )
             + " second(s)\n";
     }
-    else if (WIFEXITED(status)) {
+    else {
 
-        exitCode =
-            WEXITSTATUS(
-                status
-            );
-    }
-    else if (WIFSIGNALED(status)) {
+        if (WIFEXITED(status)) {
 
-        exitCode =
-            128
-            + WTERMSIG(
-                status
-            );
+            exitCode =
+                WEXITSTATUS(
+                    status
+                );
+        }
+        else if (WIFSIGNALED(status)) {
+
+            exitCode =
+                128
+                + WTERMSIG(
+                    status
+                );
+        }
+
+
+        if (cancelled) {
+
+            if (!stderrOutput.empty()
+                    && stderrOutput.back() != '\n') {
+
+                stderrOutput +=
+                    '\n';
+            }
+
+
+            stderrOutput +=
+                "Process cancelled by controller\n";
+        }
     }
 
 
@@ -457,6 +582,7 @@ ProcessResult executeProcess(
         exitCode,
         stdoutOutput,
         stderrOutput,
-        timedOut
+        timedOut,
+        cancelled
     };
 }
