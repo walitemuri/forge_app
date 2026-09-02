@@ -15,7 +15,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 
@@ -97,16 +98,57 @@ public class TaskController {
                     );
         }
 
-        String dependsOnTaskId =
-        request.dependsOnTaskId();
+        List<String> dependencyIds =
+        new ArrayList<>();
 
 
-        if (dependsOnTaskId != null
-                && dependsOnTaskId.isBlank()) {
+        /*
+        * Support old single-dependency requests.
+        */
+        if (request.dependsOnTaskId() != null
+                && !request.dependsOnTaskId().isBlank()) {
 
-        dependsOnTaskId =
-                null;
+        dependencyIds.add(
+                request.dependsOnTaskId()
+        );
         }
+
+
+        /*
+        * New multiple-dependency API.
+        */
+        if (request.dependsOnTaskIds() != null) {
+
+        for (String dependencyId :
+                request.dependsOnTaskIds()) {
+
+                if (dependencyId == null
+                        || dependencyId.isBlank()) {
+
+                return ResponseEntity
+                        .badRequest()
+                        .body(
+                                "dependency ids must not be empty"
+                        );
+                }
+
+
+                dependencyIds.add(
+                        dependencyId
+                );
+        }
+}
+
+
+/*
+ * Remove duplicates while keeping deterministic order.
+ */
+dependencyIds =
+        new ArrayList<>(
+                new LinkedHashSet<>(
+                        dependencyIds
+                )
+        );
         try {
 
             ForgeTask task =
@@ -115,7 +157,7 @@ public class TaskController {
                         arguments,
                         maxAttempts,
                         timeoutSeconds,
-                        dependsOnTaskId
+                        dependencyIds
                 );
 
 

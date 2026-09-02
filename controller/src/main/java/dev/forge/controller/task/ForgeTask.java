@@ -14,7 +14,8 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "forge_tasks")
@@ -69,15 +70,18 @@ public class ForgeTask {
         nullable = false
     )
     private boolean cancelRequested;
-    /*
-     * Required by JPA.
-     */
-    @Column(
-        name = "depends_on_task_id"
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+            name = "task_dependencies",
+            joinColumns = @JoinColumn(name = "task_id")
     )
-
-    private String dependsOnTaskId;
-
+    @Column(
+            name = "depends_on_task_id",
+            nullable = false
+    )
+    private Set<String> dependsOnTaskIds =
+            new LinkedHashSet<>();
     protected ForgeTask() {
     }
 
@@ -88,7 +92,7 @@ public class ForgeTask {
         List<String> arguments,
         int maxAttempts,
         int timeoutSeconds,
-        String dependsOnTaskId) {
+        List<String> dependsOnTaskIds) {
 
         this.id = id;
         this.command = command;
@@ -107,12 +111,17 @@ public class ForgeTask {
 
         this.status =
                 TaskStatus.CREATED;
-        this.dependsOnTaskId =
-                dependsOnTaskId;
+        this.dependsOnTaskIds =
+        dependsOnTaskIds == null
+                ? new LinkedHashSet<>()
+                : new LinkedHashSet<>(
+                        dependsOnTaskIds
+                );
     }
-    public String getDependsOnTaskId() {
-
-        return dependsOnTaskId;
+    public List<String> getDependsOnTaskIds() {
+        return List.copyOf(
+                dependsOnTaskIds
+        );
     }
     public int getTimeoutSeconds() {
         return timeoutSeconds;

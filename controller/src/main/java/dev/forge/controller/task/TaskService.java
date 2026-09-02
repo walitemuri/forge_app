@@ -12,7 +12,7 @@ import java.util.UUID;
 
 import dev.forge.controller.grpc.WorkerRegistry;
 import dev.forge.proto.CancelTask;
-
+import java.util.ArrayList;
 @Service
 public class TaskService {
 
@@ -44,191 +44,224 @@ public ForgeTask submitTask(
         List<String> arguments,
         int maxAttempts,
         int timeoutSeconds,
-        String dependsOnTaskId) {
+        List<String> dependsOnTaskIds) {
 
-        String taskId =
-                UUID.randomUUID()
-                        .toString();
+    String taskId =
+            UUID.randomUUID()
+                    .toString();
+
+
+    List<String> dependencyIds =
+            dependsOnTaskIds == null
+                    ? List.of()
+                    : dependsOnTaskIds
+                            .stream()
+                            .distinct()
+                            .toList();
+
+
+    List<ForgeTask> dependencies =
+            new ArrayList<>();
+
+
+    /*
+     * Every dependency must already exist.
+     *
+     * Since the new task does not exist yet,
+     * this also prevents self-dependencies.
+     */
+    for (String dependencyId :
+            dependencyIds) {
+
+        if (dependencyId == null
+                || dependencyId.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Dependency task id must not be empty"
+            );
+        }
 
 
         ForgeTask dependency =
-                null;
-
-
-        if (dependsOnTaskId != null) {
-
-                dependency =
-                        taskRegistry.get(
-                                dependsOnTaskId
-                        );
-
-
-                if (dependency == null) {
-
-                throw new IllegalArgumentException(
-                        "Dependency task "
-                                + dependsOnTaskId
-                                + " does not exist"
-                );
-                }
-        }
-
-
-        ForgeTask task =
-                new ForgeTask(
-                        taskId,
-                        command,
-                        arguments,
-                        maxAttempts,
-                        timeoutSeconds,
-                        dependsOnTaskId
-                );
-
-
-        /*
-        * No dependency:
-        * immediately eligible.
-        *
-        * Already-successful dependency:
-        * immediately eligible.
-        *
-        * Otherwise:
-        * wait in BLOCKED.
-        */
-        if (dependency == null
-                || dependency.getStatus()
-                == TaskStatus.SUCCEEDED) {
-
-                task.markPending();
-        }
-        else {
-
-                task.markBlocked();
-        }
-
-
-        task =
-                taskRegistry.register(
-                        task
-                );
-
-
-        System.out.println(
-                "＋ TASK CREATED: "
-                        + taskId
-                        + " status="
-                        + task.getStatus()
-                        + " dependsOn="
-                        + dependsOnTaskId
-        );
-
-
-        return task;
-    }
-
-    public synchronized boolean
-        retryAutomatically(
-                String taskId) {
-
-        ForgeTask task =
                 taskRegistry.get(
-                        taskId
+                        dependencyId
                 );
 
 
-        if (task == null) {
-                return false;
-        }
-        if (task.isCancelRequested()) {
+        if (dependency == null) {
 
-                return false;
-        }
-
-
-        if (task.getStatus() != TaskStatus.LOST
-                && task.getStatus() != TaskStatus.FAILED) {
-
-                return false;
+            throw new IllegalArgumentException(
+                    "Dependency task "
+                            + dependencyId
+                            + " does not exist"
+            );
         }
 
 
-        TaskAttempt latestAttempt =
-                taskAttemptRegistry
-                        .getLatestForTask(
-                                taskId
-                        );
-
-
-        if (latestAttempt == null) {
-                return false;
-        }
-
-
-        /*
-        * maxAttempts is the TOTAL number of executions,
-        * not the number of retries.
-        *
-        * maxAttempts=3:
-        * Attempt 1
-        * Attempt 2
-        * Attempt 3
-        */
-        if (latestAttempt.getAttemptNumber()
-                >= task.getMaxAttempts()) {
-
-                return false;
-        }
-
-
-        int nextAttemptNumber =
-                latestAttempt
-                        .getAttemptNumber()
-                        + 1;
-
-
-        try {
-
-                dispatchAttempt(
-                        task,
-                        nextAttemptNumber
-                );
-
-                System.out.println(
-                        "↻ AUTOMATIC RETRY: task="
-                                + taskId
-                                + " attempt="
-                                + nextAttemptNumber
-                                + "/"
-                                + task.getMaxAttempts()
-                );
-
-
-                return true;
-        }
-
-        catch (IllegalStateException exception) {
-
-                /*
-                * Typically means there is no connected worker.
-                * Leave the task LOST/FAILED. The retry
-                * coordinator can try again later.
-                */
-                System.out.println(
-                        "Automatic retry deferred: task="
-                                + taskId
-                                + " reason="
-                                + exception.getMessage()
-                );
-
-
-        return false;
+        dependencies.add(
+                dependency
+        );
     }
+
+
+    ForgeTask task =
+            new ForgeTask(
+                    taskId,
+                    command,
+                    arguments,
+                    maxAttempts,
+                    timeoutSeconds,
+                    dependencyIds
+            );
+
+
+    /*
+     * A task is runnable when:
+     *
+     * - it has no dependencies, OR
+     * - every dependency already succeeded.
+     *
+     * Otherwise DependencyCoordinator will
+     * continue watching it.
+     */
+    boolean allDependenciesSucceeded =
+            dependencies
+                    .stream()
+                    .allMatch(
+                            dependency ->
+                                    dependency.getStatus()
+                                            == TaskStatus.SUCCEEDED
+                    );
+
+
+    if (allDependenciesSucceeded) {
+
+        task.markPending();
+    }
+    else {
+
+        task.markBlocked();
+    }
+
+
+    task =
+            taskRegistry.register(
+                    task
+            );
+
+
+    System.out.println(
+            "＋ TASK CREATED: "
+                    + taskId
+                    + " status="
+                    + task.getStatus()
+                    + " dependsOn="
+                    + dependencyIds
+    );
+
+
+    return task;
 }
     /*
      * Manual retry only.
      *
      * Automatic retries come later.
      */
+    public synchronized boolean retryAutomatically(
+        String taskId) {
+
+    ForgeTask task =
+            taskRegistry.get(
+                    taskId
+            );
+
+
+    if (task == null) {
+        return false;
+    }
+
+
+    if (task.isCancelRequested()) {
+        return false;
+    }
+
+
+    if (task.getStatus() != TaskStatus.LOST
+            && task.getStatus() != TaskStatus.FAILED) {
+
+        return false;
+    }
+
+
+    TaskAttempt latestAttempt =
+            taskAttemptRegistry
+                    .getLatestForTask(
+                            taskId
+                    );
+
+
+    if (latestAttempt == null) {
+        return false;
+    }
+
+
+    /*
+     * maxAttempts is the total number
+     * of physical executions.
+     */
+    if (latestAttempt.getAttemptNumber()
+            >= task.getMaxAttempts()) {
+
+        return false;
+    }
+
+
+    int nextAttemptNumber =
+            latestAttempt
+                    .getAttemptNumber()
+                    + 1;
+
+
+    try {
+
+        dispatchAttempt(
+                task,
+                nextAttemptNumber
+        );
+
+
+        System.out.println(
+                "↻ AUTOMATIC RETRY: task="
+                        + taskId
+                        + " attempt="
+                        + nextAttemptNumber
+                        + "/"
+                        + task.getMaxAttempts()
+        );
+
+
+        return true;
+    }
+
+    catch (IllegalStateException exception) {
+
+        /*
+         * Usually no worker capacity is available.
+         * Leave FAILED/LOST intact so the retry
+         * coordinator can try again later.
+         */
+        System.out.println(
+                "Automatic retry deferred: task="
+                        + taskId
+                        + " reason="
+                        + exception.getMessage()
+        );
+
+
+        return false;
+    }
+}
+
     public synchronized ForgeTask retryTask(
             String taskId) {
 
@@ -256,7 +289,7 @@ public ForgeTask submitTask(
                         + taskId
                         + " cannot be retried because cancellation was requested"
         );
-}
+     }
 
         if (task.getStatus() != TaskStatus.LOST
                 && task.getStatus() != TaskStatus.FAILED) {
