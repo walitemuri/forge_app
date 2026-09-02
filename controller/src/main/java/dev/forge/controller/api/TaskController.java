@@ -97,15 +97,27 @@ public class TaskController {
                     );
         }
 
+        String dependsOnTaskId =
+        request.dependsOnTaskId();
+
+
+        if (dependsOnTaskId != null
+                && dependsOnTaskId.isBlank()) {
+
+        dependsOnTaskId =
+                null;
+        }
         try {
 
             ForgeTask task =
                     taskService.submitTask(
-                    request.command(),
-                    arguments,
-                    maxAttempts,
-                    timeoutSeconds
-            );
+                        request.command(),
+                        arguments,
+                        maxAttempts,
+                        timeoutSeconds,
+                        dependsOnTaskId
+                );
+
 
 
             return ResponseEntity
@@ -114,6 +126,14 @@ public class TaskController {
                             TaskResponse.from(task)
                     );
         }
+        catch (IllegalArgumentException exception) {
+
+                return ResponseEntity
+                        .badRequest()
+                        .body(
+                                exception.getMessage()
+                        );
+                }
 
         catch (IllegalStateException exception) {
 

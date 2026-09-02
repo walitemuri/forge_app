@@ -7,6 +7,7 @@ public record CreateTaskRequest(
         String command,
         List<String> arguments,
         Integer maxAttempts,
-        Integer timeoutSeconds
+        Integer timeoutSeconds,
+        String dependsOnTaskId
 ) {
 }

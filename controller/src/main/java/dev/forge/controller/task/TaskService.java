@@ -39,16 +39,39 @@ public class TaskService {
                 taskScheduler;
     }
 
-
-    public ForgeTask submitTask(
+public ForgeTask submitTask(
         String command,
         List<String> arguments,
         int maxAttempts,
-        int timeoutSeconds) {
+        int timeoutSeconds,
+        String dependsOnTaskId) {
 
         String taskId =
                 UUID.randomUUID()
                         .toString();
+
+
+        ForgeTask dependency =
+                null;
+
+
+        if (dependsOnTaskId != null) {
+
+                dependency =
+                        taskRegistry.get(
+                                dependsOnTaskId
+                        );
+
+
+                if (dependency == null) {
+
+                throw new IllegalArgumentException(
+                        "Dependency task "
+                                + dependsOnTaskId
+                                + " does not exist"
+                );
+                }
+        }
 
 
         ForgeTask task =
@@ -57,20 +80,31 @@ public class TaskService {
                         command,
                         arguments,
                         maxAttempts,
-                        timeoutSeconds
+                        timeoutSeconds,
+                        dependsOnTaskId
                 );
 
 
         /*
-        * Submission and execution are now separate.
+        * No dependency:
+        * immediately eligible.
         *
-        * POST /tasks means:
-        * "durably accept this work"
+        * Already-successful dependency:
+        * immediately eligible.
         *
-        * not:
-        * "a worker must be available right now"
+        * Otherwise:
+        * wait in BLOCKED.
         */
-        task.markPending();
+        if (dependency == null
+                || dependency.getStatus()
+                == TaskStatus.SUCCEEDED) {
+
+                task.markPending();
+        }
+        else {
+
+                task.markBlocked();
+        }
 
 
         task =
@@ -80,13 +114,18 @@ public class TaskService {
 
 
         System.out.println(
-                "＋ TASK QUEUED: "
+                "＋ TASK CREATED: "
                         + taskId
+                        + " status="
+                        + task.getStatus()
+                        + " dependsOn="
+                        + dependsOnTaskId
         );
 
 
         return task;
-        }
+    }
+
     public synchronized boolean
         retryAutomatically(
                 String taskId) {
@@ -283,7 +322,6 @@ public class TaskService {
     private void dispatchAttempt(
             ForgeTask task,
             int attemptNumber) {
-
         /*
          * Reserve capacity before creating the attempt.
          *
@@ -521,7 +559,6 @@ public class TaskService {
                         taskId
                 );
 
-
         if (task == null) {
 
                 return null;
@@ -537,7 +574,9 @@ public class TaskService {
                 return task;
         }
         if (task.getStatus()
-        == TaskStatus.PENDING) {
+                == TaskStatus.PENDING
+                || task.getStatus()
+                == TaskStatus.BLOCKED) {
 
                 task.requestCancellation();
 
@@ -550,7 +589,7 @@ public class TaskService {
 
 
                 System.out.println(
-                        "■ PENDING TASK CANCELLED: "
+                        "■ UNDISPATCHED TASK CANCELLED: "
                                 + taskId
                 );
 

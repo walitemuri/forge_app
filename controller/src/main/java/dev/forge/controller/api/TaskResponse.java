@@ -15,6 +15,8 @@ public record TaskResponse(
 
         String status,
 
+        String dependsOnTaskId,
+
         boolean cancelRequested,
         String workerId,
 
@@ -43,6 +45,8 @@ public record TaskResponse(
                 task.getCommand(),
 
                 task.getStatus().name(),
+
+                task.getDependsOnTaskId(),
 
                 task.isCancelRequested(),
                 task.getWorkerId(),

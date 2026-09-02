@@ -72,6 +72,12 @@ public class ForgeTask {
     /*
      * Required by JPA.
      */
+    @Column(
+        name = "depends_on_task_id"
+    )
+
+    private String dependsOnTaskId;
+
     protected ForgeTask() {
     }
 
@@ -81,7 +87,8 @@ public class ForgeTask {
         String command,
         List<String> arguments,
         int maxAttempts,
-        int timeoutSeconds) {
+        int timeoutSeconds,
+        String dependsOnTaskId) {
 
         this.id = id;
         this.command = command;
@@ -100,6 +107,12 @@ public class ForgeTask {
 
         this.status =
                 TaskStatus.CREATED;
+        this.dependsOnTaskId =
+                dependsOnTaskId;
+    }
+    public String getDependsOnTaskId() {
+
+        return dependsOnTaskId;
     }
     public int getTimeoutSeconds() {
         return timeoutSeconds;
@@ -170,6 +183,15 @@ public class ForgeTask {
     public void markRunning() {
         this.status =
                 TaskStatus.RUNNING;
+    }
+
+    public void markBlocked() {
+
+        this.status =
+                TaskStatus.BLOCKED;
+
+        this.workerId =
+                null;
     }
     public void markLost() {
 
