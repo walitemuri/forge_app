@@ -17,4 +17,4 @@ worker/build/
 
 # Logs
 *.log
-.fake
+.fakecontroller/src/main/java/dev/forge/controller/task/oracleJdk-26/

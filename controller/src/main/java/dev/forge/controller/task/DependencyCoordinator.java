@@ -5,27 +5,27 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-
 @Component
 public class DependencyCoordinator {
 
-    private final TaskRegistry
-            taskRegistry;
+    private final TaskRegistry taskRegistry;
+    private final TaskAttemptRegistry taskAttemptRegistry;
 
 
     public DependencyCoordinator(
-            TaskRegistry taskRegistry) {
+            TaskRegistry taskRegistry,
+            TaskAttemptRegistry taskAttemptRegistry) {
 
         this.taskRegistry =
                 taskRegistry;
+
+        this.taskAttemptRegistry =
+                taskAttemptRegistry;
     }
 
 
     @Scheduled(fixedDelay = 500)
     public void releaseSatisfiedDependencies() {
-        System.out.println(
-                 "[dependency-coordinator] tick"
-        );
 
         List<ForgeTask> blockedTasks =
                 taskRegistry
@@ -34,11 +34,9 @@ public class DependencyCoordinator {
                         );
 
 
-        for (ForgeTask task :
-                blockedTasks) {
+        for (ForgeTask task : blockedTasks) {
 
             if (task.isCancelRequested()) {
-
                 continue;
             }
 
@@ -47,17 +45,10 @@ public class DependencyCoordinator {
                     task.getDependsOnTaskId();
 
 
-            /*
-             * Defensive recovery:
-             * BLOCKED should always have a dependency.
-             */
             if (dependencyId == null) {
 
                 task.markPending();
-
-                taskRegistry.save(
-                        task
-                );
+                taskRegistry.save(task);
 
                 continue;
             }
@@ -69,39 +60,109 @@ public class DependencyCoordinator {
                     );
 
 
-            /*
-             * The foreign key should make this impossible,
-             * but don't crash the scheduler if database
-             * state is ever inconsistent.
-             */
             if (dependency == null) {
-
                 continue;
             }
 
 
+            /*
+             * Dependency succeeded:
+             * release child into normal pending queue.
+             */
             if (dependency.getStatus()
-                    != TaskStatus.SUCCEEDED) {
+                    == TaskStatus.SUCCEEDED) {
+
+                task.markPending();
+                taskRegistry.save(task);
+
+                System.out.println(
+                        "✓ DEPENDENCY SATISFIED: task="
+                                + task.getId()
+                                + " dependency="
+                                + dependencyId
+                                + " → PENDING"
+                );
 
                 continue;
             }
 
 
-            task.markPending();
+            /*
+             * Cancellation is immediately terminal.
+             */
+            if (dependency.getStatus()
+                    == TaskStatus.CANCELLED) {
+
+                skipTask(
+                        task,
+                        dependency
+                );
+
+                continue;
+            }
 
 
-            taskRegistry.save(
-                    task
-            );
+            /*
+             * FAILED / LOST may still be retried.
+             *
+             * Do not skip the child until the dependency
+             * has exhausted its retry budget.
+             */
+            if (dependency.getStatus()
+                    == TaskStatus.FAILED
+                    || dependency.getStatus()
+                    == TaskStatus.LOST) {
+
+                TaskAttempt latestAttempt =
+                        taskAttemptRegistry
+                                .getLatestForTask(
+                                        dependencyId
+                                );
 
 
-            System.out.println(
-                    "✓ DEPENDENCY SATISFIED: task="
-                            + task.getId()
-                            + " dependency="
-                            + dependencyId
-                            + " → PENDING"
-            );
+                if (latestAttempt == null) {
+                    continue;
+                }
+
+
+                boolean retriesExhausted =
+                        latestAttempt
+                                .getAttemptNumber()
+                                >= dependency
+                                .getMaxAttempts();
+
+
+                if (retriesExhausted) {
+
+                    skipTask(
+                            task,
+                            dependency
+                    );
+                }
+            }
         }
+    }
+
+
+    private void skipTask(
+            ForgeTask task,
+            ForgeTask dependency) {
+
+        task.markSkipped();
+
+        taskRegistry.save(
+                task
+        );
+
+
+        System.out.println(
+                "⊘ DEPENDENCY FAILED: task="
+                        + task.getId()
+                        + " dependency="
+                        + dependency.getId()
+                        + " dependencyStatus="
+                        + dependency.getStatus()
+                        + " → SKIPPED"
+        );
     }
 }

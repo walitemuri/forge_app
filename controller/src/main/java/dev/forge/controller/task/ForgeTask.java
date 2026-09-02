@@ -290,4 +290,9 @@ public class ForgeTask {
         this.workerId =
                 null;
     }
+
+    public void markSkipped() {
+        this.status = TaskStatus.SKIPPED;
+        this.workerId = null;
+    }
 }
