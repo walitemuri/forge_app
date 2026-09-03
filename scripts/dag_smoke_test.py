@@ -11,6 +11,7 @@ BASE_URL = "http://localhost:8080/api/tasks"
 POLL_INTERVAL = 0.25
 DEFAULT_TIMEOUT = 30
 
+WORKFLOW_URL = "http://localhost:8080/api/workflows"
 
 # ============================================================
 # HTTP helpers
@@ -46,6 +47,12 @@ def request_json(method, url, body=None):
             f"HTTP {exc.code}: {body}"
         )
 
+def create_workflow(payload):
+    return request_json(
+        "POST",
+        WORKFLOW_URL,
+        payload,
+    )
 
 def create_task(
         command,
@@ -217,7 +224,172 @@ def test_fan_in():
 
     print("  PASS")
 
+def test_workflow_submission():
+    print(
+        "\n[TEST] workflow submission API"
+    )
 
+    workflow = create_workflow(
+        {
+            "name": "smoke-build",
+            "tasks": [
+                {
+                    "key": "checkout",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'import time; '
+                            'print("CHECKOUT", flush=True); '
+                            'time.sleep(1)'
+                        ),
+                    ],
+                },
+                {
+                    "key": "compile",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'import time; '
+                            'print("COMPILE", flush=True); '
+                            'time.sleep(1)'
+                        ),
+                    ],
+                    "dependsOn": [
+                        "checkout",
+                    ],
+                },
+                {
+                    "key": "test",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        'print("TEST", flush=True)',
+                    ],
+                    "dependsOn": [
+                        "compile",
+                    ],
+                },
+                {
+                    "key": "package",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        'print("PACKAGE", flush=True)',
+                    ],
+                    "dependsOn": [
+                        "compile",
+                        "test",
+                    ],
+                },
+            ],
+        }
+    )
+def test_workflow_cycle_rejected():
+    print(
+        "\n[TEST] workflow cycle rejection"
+    )
+
+    payload = {
+        "name": "invalid-cycle",
+        "tasks": [
+            {
+                "key": "a",
+                "command": "python3",
+                "arguments": [
+                    "-c",
+                    'print("A")',
+                ],
+                "dependsOn": [
+                    "b",
+                ],
+            },
+            {
+                "key": "b",
+                "command": "python3",
+                "arguments": [
+                    "-c",
+                    'print("B")',
+                ],
+                "dependsOn": [
+                    "a",
+                ],
+            },
+        ],
+    }
+
+    try:
+        create_workflow(
+            payload
+        )
+
+    except RuntimeError as exc:
+
+        if "400" not in str(exc):
+            raise
+
+        if "cycle" not in str(exc).lower():
+            raise AssertionError(
+                "Cycle rejection did not mention cycle"
+            )
+
+        print("  PASS")
+        return
+
+    raise AssertionError(
+        "Cyclic workflow was accepted"
+    )
+
+    if workflow["name"] != "smoke-build":
+        raise AssertionError(
+            "Workflow name mismatch"
+        )
+
+    tasks = {
+        task["key"]: task
+        for task in workflow["tasks"]
+    }
+
+    expected_keys = {
+        "checkout",
+        "compile",
+        "test",
+        "package",
+    }
+
+    if set(tasks.keys()) != expected_keys:
+        raise AssertionError(
+            "Workflow task keys mismatch"
+        )
+
+    if tasks["checkout"]["status"] != "PENDING":
+        raise AssertionError(
+            "checkout should initially be PENDING"
+        )
+
+    for key in [
+        "compile",
+        "test",
+        "package",
+    ]:
+        if tasks[key]["status"] != "BLOCKED":
+            raise AssertionError(
+                f"{key} should initially be BLOCKED"
+            )
+
+    for key in [
+        "checkout",
+        "compile",
+        "test",
+        "package",
+    ]:
+        wait_for_status(
+            tasks[key]["taskId"],
+            "SUCCEEDED",
+        )
+
+    print("  PASS")
 def test_fan_out():
     print("\n[TEST] fan-out: A -> B + C")
 
@@ -422,6 +594,39 @@ def test_transitive_skip():
 
     print("  PASS")
 
+def test_argument_order():
+    print("\n[TEST] persisted argument ordering")
+
+    task = create_task(
+        "python3",
+        [
+            "-c",
+            (
+                'import sys; '
+                'print("|".join(sys.argv[1:]), flush=True)'
+            ),
+            "first",
+            "second",
+            "third",
+            "fourth",
+        ],
+    )
+
+    completed = wait_for_status(
+        task["id"],
+        "SUCCEEDED",
+    )
+
+    expected = "first|second|third|fourth"
+    actual = completed["stdout"].strip()
+
+    if actual != expected:
+        raise AssertionError(
+            f"Expected argv '{expected}', "
+            f"got '{actual}'"
+        )
+
+    print("  PASS")
 
 # ============================================================
 # Main
@@ -447,10 +652,13 @@ def main():
         return 1
 
     tests = [
+        test_argument_order,
         test_fan_in,
         test_fan_out,
         test_multi_parent_failure,
         test_transitive_skip,
+        test_workflow_submission,
+        test_workflow_cycle_rejected,
     ]
 
     passed = 0

@@ -143,7 +143,7 @@ public class TaskController {
 /*
  * Remove duplicates while keeping deterministic order.
  */
-dependencyIds =
+ dependencyIds =
         new ArrayList<>(
                 new LinkedHashSet<>(
                         dependencyIds
