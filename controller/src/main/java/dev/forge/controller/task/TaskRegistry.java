@@ -72,4 +72,12 @@ public class TaskRegistry {
                             status
                     );
         }
+    public List<ForgeTask> getByWorkflowId(
+            String workflowId) {
+
+        return repository
+                .findByWorkflowIdOrderByCreatedAtAsc(
+                        workflowId
+                );
+    }
 }

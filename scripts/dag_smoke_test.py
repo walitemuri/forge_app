@@ -8,10 +8,11 @@ import urllib.request
 
 
 BASE_URL = "http://localhost:8080/api/tasks"
+WORKFLOW_URL = "http://localhost:8080/api/workflows"
+
 POLL_INTERVAL = 0.25
 DEFAULT_TIMEOUT = 30
 
-WORKFLOW_URL = "http://localhost:8080/api/workflows"
 
 # ============================================================
 # HTTP helpers
@@ -23,36 +24,46 @@ def request_json(method, url, body=None):
     if body is not None:
         data = json.dumps(body).encode("utf-8")
 
-    req = urllib.request.Request(
+    request = urllib.request.Request(
         url,
         data=data,
         method=method,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+        },
     )
 
     try:
-        with urllib.request.urlopen(req) as response:
-            text = response.read().decode("utf-8")
+        with urllib.request.urlopen(
+                request,
+                timeout=10) as response:
+
+            text = response.read().decode(
+                "utf-8"
+            )
 
             if not text:
                 return None
 
-            return json.loads(text)
+            return json.loads(
+                text
+            )
 
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8")
+        error_body = exc.read().decode(
+            "utf-8"
+        )
 
         raise RuntimeError(
             f"{method} {url} failed: "
-            f"HTTP {exc.code}: {body}"
+            f"HTTP {exc.code}: "
+            f"{error_body}"
         )
 
-def create_workflow(payload):
-    return request_json(
-        "POST",
-        WORKFLOW_URL,
-        payload,
-    )
+
+# ============================================================
+# Task helpers
+# ============================================================
 
 def create_task(
         command,
@@ -70,7 +81,9 @@ def create_task(
     }
 
     if dependencies:
-        payload["dependsOnTaskIds"] = dependencies
+        payload["dependsOnTaskIds"] = (
+            dependencies
+        )
 
     task = request_json(
         "POST",
@@ -108,47 +121,129 @@ def wait_for_status(
     deadline = time.time() + timeout
 
     while time.time() < deadline:
-        task = get_task(task_id)
+        task = get_task(
+            task_id
+        )
 
         if task["status"] == expected_status:
             return task
 
-        time.sleep(POLL_INTERVAL)
+        time.sleep(
+            POLL_INTERVAL
+        )
 
-    task = get_task(task_id)
+    task = get_task(
+        task_id
+    )
 
     raise AssertionError(
         f"Task {task_id}: expected "
-        f"{expected_status}, got {task['status']}"
+        f"{expected_status}, got "
+        f"{task['status']}"
     )
 
 
-def assert_status(task_id, expected):
-    actual = get_task(task_id)["status"]
+def assert_status(
+        task_id,
+        expected):
+
+    actual = get_task(
+        task_id
+    )["status"]
 
     if actual != expected:
         raise AssertionError(
             f"Task {task_id}: "
-            f"expected {expected}, got {actual}"
+            f"expected {expected}, "
+            f"got {actual}"
         )
 
 
-def assert_no_attempts(task_id):
-    attempts = get_attempts(task_id)
+def assert_no_attempts(
+        task_id):
+
+    attempts = get_attempts(
+        task_id
+    )
 
     if attempts != []:
         raise AssertionError(
-            f"Task {task_id} should have no attempts, "
-            f"got {len(attempts)}"
+            f"Task {task_id} should "
+            f"have no attempts, got "
+            f"{len(attempts)}"
         )
+
+
+# ============================================================
+# Workflow helpers
+# ============================================================
+
+def create_workflow(payload):
+    return request_json(
+        "POST",
+        WORKFLOW_URL,
+        payload,
+    )
+
+
+def get_workflow(workflow_id):
+    return request_json(
+        "GET",
+        f"{WORKFLOW_URL}/{workflow_id}",
+    )
 
 
 # ============================================================
 # Tests
 # ============================================================
 
+def test_argument_order():
+    print(
+        "\n[TEST] persisted argument ordering"
+    )
+
+    task = create_task(
+        "python3",
+        [
+            "-c",
+            (
+                'import sys; '
+                'print("|".join(sys.argv[1:]), '
+                'flush=True)'
+            ),
+            "first",
+            "second",
+            "third",
+            "fourth",
+        ],
+    )
+
+    completed = wait_for_status(
+        task["id"],
+        "SUCCEEDED",
+    )
+
+    expected = (
+        "first|second|third|fourth"
+    )
+
+    actual = completed[
+        "stdout"
+    ].strip()
+
+    if actual != expected:
+        raise AssertionError(
+            f"Expected argv '{expected}', "
+            f"got '{actual}'"
+        )
+
+    print("  PASS")
+
+
 def test_fan_in():
-    print("\n[TEST] fan-in: A + B -> C")
+    print(
+        "\n[TEST] fan-in: A + B -> C"
+    )
 
     parent_a = create_task(
         "python3",
@@ -156,9 +251,11 @@ def test_fan_in():
             "-c",
             (
                 'import time; '
-                'print("FANIN A START", flush=True); '
+                'print("FANIN A START", '
+                'flush=True); '
                 'time.sleep(2); '
-                'print("FANIN A DONE", flush=True)'
+                'print("FANIN A DONE", '
+                'flush=True)'
             ),
         ],
     )
@@ -169,9 +266,11 @@ def test_fan_in():
             "-c",
             (
                 'import time; '
-                'print("FANIN B START", flush=True); '
+                'print("FANIN B START", '
+                'flush=True); '
                 'time.sleep(5); '
-                'print("FANIN B DONE", flush=True)'
+                'print("FANIN B DONE", '
+                'flush=True)'
             ),
         ],
     )
@@ -180,7 +279,11 @@ def test_fan_in():
         "python3",
         [
             "-c",
-            'print("FANIN CHILD EXECUTED")',
+            (
+                'print('
+                '"FANIN CHILD EXECUTED"'
+                ')'
+            ),
         ],
         dependencies=[
             parent_a["id"],
@@ -202,7 +305,8 @@ def test_fan_in():
         "SUCCEEDED",
     )
 
-    # A is done but B should still be running.
+    # A succeeded, but B has not.
+    # C must still be blocked.
     assert_status(
         child["id"],
         "BLOCKED",
@@ -224,174 +328,11 @@ def test_fan_in():
 
     print("  PASS")
 
-def test_workflow_submission():
-    print(
-        "\n[TEST] workflow submission API"
-    )
 
-    workflow = create_workflow(
-        {
-            "name": "smoke-build",
-            "tasks": [
-                {
-                    "key": "checkout",
-                    "command": "python3",
-                    "arguments": [
-                        "-c",
-                        (
-                            'import time; '
-                            'print("CHECKOUT", flush=True); '
-                            'time.sleep(1)'
-                        ),
-                    ],
-                },
-                {
-                    "key": "compile",
-                    "command": "python3",
-                    "arguments": [
-                        "-c",
-                        (
-                            'import time; '
-                            'print("COMPILE", flush=True); '
-                            'time.sleep(1)'
-                        ),
-                    ],
-                    "dependsOn": [
-                        "checkout",
-                    ],
-                },
-                {
-                    "key": "test",
-                    "command": "python3",
-                    "arguments": [
-                        "-c",
-                        'print("TEST", flush=True)',
-                    ],
-                    "dependsOn": [
-                        "compile",
-                    ],
-                },
-                {
-                    "key": "package",
-                    "command": "python3",
-                    "arguments": [
-                        "-c",
-                        'print("PACKAGE", flush=True)',
-                    ],
-                    "dependsOn": [
-                        "compile",
-                        "test",
-                    ],
-                },
-            ],
-        }
-    )
-def test_workflow_cycle_rejected():
-    print(
-        "\n[TEST] workflow cycle rejection"
-    )
-
-    payload = {
-        "name": "invalid-cycle",
-        "tasks": [
-            {
-                "key": "a",
-                "command": "python3",
-                "arguments": [
-                    "-c",
-                    'print("A")',
-                ],
-                "dependsOn": [
-                    "b",
-                ],
-            },
-            {
-                "key": "b",
-                "command": "python3",
-                "arguments": [
-                    "-c",
-                    'print("B")',
-                ],
-                "dependsOn": [
-                    "a",
-                ],
-            },
-        ],
-    }
-
-    try:
-        create_workflow(
-            payload
-        )
-
-    except RuntimeError as exc:
-
-        if "400" not in str(exc):
-            raise
-
-        if "cycle" not in str(exc).lower():
-            raise AssertionError(
-                "Cycle rejection did not mention cycle"
-            )
-
-        print("  PASS")
-        return
-
-    raise AssertionError(
-        "Cyclic workflow was accepted"
-    )
-
-    if workflow["name"] != "smoke-build":
-        raise AssertionError(
-            "Workflow name mismatch"
-        )
-
-    tasks = {
-        task["key"]: task
-        for task in workflow["tasks"]
-    }
-
-    expected_keys = {
-        "checkout",
-        "compile",
-        "test",
-        "package",
-    }
-
-    if set(tasks.keys()) != expected_keys:
-        raise AssertionError(
-            "Workflow task keys mismatch"
-        )
-
-    if tasks["checkout"]["status"] != "PENDING":
-        raise AssertionError(
-            "checkout should initially be PENDING"
-        )
-
-    for key in [
-        "compile",
-        "test",
-        "package",
-    ]:
-        if tasks[key]["status"] != "BLOCKED":
-            raise AssertionError(
-                f"{key} should initially be BLOCKED"
-            )
-
-    for key in [
-        "checkout",
-        "compile",
-        "test",
-        "package",
-    ]:
-        wait_for_status(
-            tasks[key]["taskId"],
-            "SUCCEEDED",
-        )
-
-    print("  PASS")
 def test_fan_out():
-    print("\n[TEST] fan-out: A -> B + C")
+    print(
+        "\n[TEST] fan-out: A -> B + C"
+    )
 
     parent = create_task(
         "python3",
@@ -399,9 +340,11 @@ def test_fan_out():
             "-c",
             (
                 'import time; '
-                'print("FANOUT PARENT START", flush=True); '
+                'print("FANOUT PARENT START", '
+                'flush=True); '
                 'time.sleep(3); '
-                'print("FANOUT PARENT DONE", flush=True)'
+                'print("FANOUT PARENT DONE", '
+                'flush=True)'
             ),
         ],
     )
@@ -474,7 +417,11 @@ def test_multi_parent_failure():
         "python3",
         [
             "-c",
-            'print("FAILTEST A SUCCESS", flush=True)',
+            (
+                'print('
+                '"FAILTEST A SUCCESS", '
+                'flush=True)'
+            ),
         ],
     )
 
@@ -484,7 +431,8 @@ def test_multi_parent_failure():
             "-c",
             (
                 'import sys; '
-                'print("FAILTEST B FAIL", flush=True); '
+                'print("FAILTEST B FAIL", '
+                'flush=True); '
                 'sys.exit(1)'
             ),
         ],
@@ -496,8 +444,9 @@ def test_multi_parent_failure():
         [
             "-c",
             (
-                'print("ERROR: '
-                'SKIPPED CHILD EXECUTED")'
+                'print('
+                '"ERROR: SKIPPED CHILD EXECUTED"'
+                ')'
             ),
         ],
         dependencies=[
@@ -540,7 +489,8 @@ def test_transitive_skip():
             "-c",
             (
                 'import sys; '
-                'print("CHAIN A FAIL", flush=True); '
+                'print("CHAIN A FAIL", '
+                'flush=True); '
                 'sys.exit(1)'
             ),
         ],
@@ -551,7 +501,11 @@ def test_transitive_skip():
         "python3",
         [
             "-c",
-            'print("ERROR: CHAIN B EXECUTED")',
+            (
+                'print('
+                '"ERROR: CHAIN B EXECUTED"'
+                ')'
+            ),
         ],
         dependencies=[
             parent_a["id"],
@@ -562,7 +516,11 @@ def test_transitive_skip():
         "python3",
         [
             "-c",
-            'print("ERROR: CHAIN C EXECUTED")',
+            (
+                'print('
+                '"ERROR: CHAIN C EXECUTED"'
+                ')'
+            ),
         ],
         dependencies=[
             task_b["id"],
@@ -594,62 +552,479 @@ def test_transitive_skip():
 
     print("  PASS")
 
-def test_argument_order():
-    print("\n[TEST] persisted argument ordering")
 
-    task = create_task(
-        "python3",
-        [
-            "-c",
-            (
-                'import sys; '
-                'print("|".join(sys.argv[1:]), flush=True)'
-            ),
-            "first",
-            "second",
-            "third",
-            "fourth",
-        ],
+def test_workflow_submission():
+    print(
+        "\n[TEST] workflow submission + retrieval"
     )
 
-    completed = wait_for_status(
-        task["id"],
-        "SUCCEEDED",
+    workflow = create_workflow(
+        {
+            "name": "smoke-build",
+            "tasks": [
+                {
+                    "key": "checkout",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'import time; '
+                            'print("CHECKOUT", '
+                            'flush=True); '
+                            'time.sleep(1)'
+                        ),
+                    ],
+                },
+                {
+                    "key": "compile",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'import time; '
+                            'print("COMPILE", '
+                            'flush=True); '
+                            'time.sleep(1)'
+                        ),
+                    ],
+                    "dependsOn": [
+                        "checkout",
+                    ],
+                },
+                {
+                    "key": "test",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'print("TEST", '
+                            'flush=True)'
+                        ),
+                    ],
+                    "dependsOn": [
+                        "compile",
+                    ],
+                },
+                {
+                    "key": "package",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'print("PACKAGE", '
+                            'flush=True)'
+                        ),
+                    ],
+                    "dependsOn": [
+                        "compile",
+                        "test",
+                    ],
+                },
+            ],
+        }
     )
 
-    expected = "first|second|third|fourth"
-    actual = completed["stdout"].strip()
+    workflow_id = workflow["id"]
 
-    if actual != expected:
+    if workflow["name"] != "smoke-build":
         raise AssertionError(
-            f"Expected argv '{expected}', "
-            f"got '{actual}'"
+            "Workflow name mismatch"
         )
 
+    if workflow["status"] != "PENDING":
+        raise AssertionError(
+            "Workflow should initially "
+            f"be PENDING, got "
+            f"{workflow['status']}"
+        )
+
+    tasks = {
+        task["key"]: task
+        for task in workflow["tasks"]
+    }
+
+    expected_keys = {
+        "checkout",
+        "compile",
+        "test",
+        "package",
+    }
+
+    if set(tasks.keys()) != expected_keys:
+        raise AssertionError(
+            "Workflow task keys mismatch"
+        )
+
+    if tasks["checkout"]["status"] != "PENDING":
+        raise AssertionError(
+            "checkout should initially "
+            "be PENDING"
+        )
+
+    for key in [
+        "compile",
+        "test",
+        "package",
+    ]:
+
+        if tasks[key]["status"] != "BLOCKED":
+            raise AssertionError(
+                f"{key} should initially "
+                "be BLOCKED"
+            )
+
+    for key in [
+        "checkout",
+        "compile",
+        "test",
+        "package",
+    ]:
+
+        wait_for_status(
+            tasks[key]["taskId"],
+            "SUCCEEDED",
+        )
+
+    persisted = get_workflow(
+        workflow_id
+    )
+
+    if persisted["id"] != workflow_id:
+        raise AssertionError(
+            "workflow id changed "
+            "after retrieval"
+        )
+
+    if persisted["name"] != "smoke-build":
+        raise AssertionError(
+            "workflow name mismatch "
+            "after retrieval"
+        )
+
+    if persisted["status"] != "SUCCEEDED":
+        raise AssertionError(
+            "Workflow should be SUCCEEDED, "
+            f"got {persisted['status']}"
+        )
+
+    persisted_tasks = {
+        task["key"]: task
+        for task in persisted["tasks"]
+    }
+
+    expected_dependencies = {
+        "checkout": [],
+        "compile": [
+            "checkout",
+        ],
+        "test": [
+            "compile",
+        ],
+        "package": [
+            "compile",
+            "test",
+        ],
+    }
+
+    for key, dependencies in (
+            expected_dependencies.items()):
+
+        task = persisted_tasks[
+            key
+        ]
+
+        if task["status"] != "SUCCEEDED":
+            raise AssertionError(
+                f"{key} should be "
+                f"SUCCEEDED, got "
+                f"{task['status']}"
+            )
+
+        if set(task["dependsOn"]) != \
+                set(dependencies):
+
+            raise AssertionError(
+                f"{key} dependencies "
+                f"incorrect: "
+                f"{task['dependsOn']}"
+            )
+
     print("  PASS")
+
+
+def test_workflow_cycle_rejected():
+    print(
+        "\n[TEST] workflow cycle rejection"
+    )
+
+    payload = {
+        "name": "invalid-cycle",
+        "tasks": [
+            {
+                "key": "a",
+                "command": "python3",
+                "arguments": [
+                    "-c",
+                    'print("A")',
+                ],
+                "dependsOn": [
+                    "b",
+                ],
+            },
+            {
+                "key": "b",
+                "command": "python3",
+                "arguments": [
+                    "-c",
+                    'print("B")',
+                ],
+                "dependsOn": [
+                    "a",
+                ],
+            },
+        ],
+    }
+
+    try:
+        create_workflow(
+            payload
+        )
+
+    except RuntimeError as exc:
+        message = str(
+            exc
+        )
+
+        if "400" not in message:
+            raise
+
+        if "cycle" not in message.lower():
+            raise AssertionError(
+                "Cycle rejection did "
+                "not mention cycle"
+            )
+
+        print("  PASS")
+        return
+
+    raise AssertionError(
+        "Cyclic workflow was accepted"
+    )
+
+
+def test_workflow_failure_status():
+    print(
+        "\n[TEST] workflow aggregate "
+        "failure status"
+    )
+
+    workflow = create_workflow(
+        {
+            "name": "failure-workflow",
+            "tasks": [
+                {
+                    "key": "parent",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'import sys; '
+                            'print("PARENT FAIL", '
+                            'flush=True); '
+                            'sys.exit(1)'
+                        ),
+                    ],
+                    "maxAttempts": 1,
+                },
+                {
+                    "key": "child",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'print('
+                            '"ERROR: CHILD EXECUTED"'
+                            ')'
+                        ),
+                    ],
+                    "dependsOn": [
+                        "parent",
+                    ],
+                },
+            ],
+        }
+    )
+
+    tasks = {
+        task["key"]: task
+        for task in workflow["tasks"]
+    }
+
+    wait_for_status(
+        tasks["parent"]["taskId"],
+        "FAILED",
+    )
+
+    wait_for_status(
+        tasks["child"]["taskId"],
+        "SKIPPED",
+    )
+
+    persisted = get_workflow(
+        workflow["id"]
+    )
+
+    if persisted["status"] != "FAILED":
+        raise AssertionError(
+            "Workflow should be FAILED, "
+            f"got {persisted['status']}"
+        )
+
+    assert_no_attempts(
+        tasks["child"]["taskId"]
+    )
+
+    print("  PASS")
+
+def cancel_workflow(workflow_id):
+    return request_json(
+        "POST",
+        f"{WORKFLOW_URL}/{workflow_id}/cancel",
+    )
+
+def test_workflow_cancellation():
+    print(
+        "\n[TEST] workflow cancellation"
+    )
+
+    workflow = create_workflow(
+        {
+            "name": "cancel-workflow",
+            "tasks": [
+                {
+                    "key": "long-running",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'import time; '
+                            'print("LONG START", flush=True); '
+                            'time.sleep(20); '
+                            'print("ERROR: LONG FINISHED", '
+                            'flush=True)'
+                        ),
+                    ],
+                    "timeoutSeconds": 30,
+                },
+                {
+                    "key": "blocked-child",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'print("ERROR: CHILD EXECUTED", '
+                            'flush=True)'
+                        ),
+                    ],
+                    "dependsOn": [
+                        "long-running",
+                    ],
+                },
+            ],
+        }
+    )
+
+
+    tasks = {
+        task["key"]: task
+        for task in workflow["tasks"]
+    }
+
+
+    wait_for_status(
+        tasks["long-running"]["taskId"],
+        "RUNNING",
+    )
+
+
+    assert_status(
+        tasks["blocked-child"]["taskId"],
+        "BLOCKED",
+    )
+
+
+    cancel_workflow(
+        workflow["id"]
+    )
+
+
+    wait_for_status(
+        tasks["long-running"]["taskId"],
+        "CANCELLED",
+    )
+
+
+    wait_for_status(
+        tasks["blocked-child"]["taskId"],
+        "CANCELLED",
+    )
+
+
+    assert_no_attempts(
+        tasks["blocked-child"]["taskId"]
+    )
+
+
+    persisted = get_workflow(
+        workflow["id"]
+    )
+
+
+    if persisted["status"] != "CANCELLED":
+        raise AssertionError(
+            "Workflow should be CANCELLED, "
+            f"got {persisted['status']}"
+        )
+
+
+    print("  PASS")
+    
 
 # ============================================================
 # Main
 # ============================================================
 
 def main():
-    print("Forge DAG smoke tests")
-    print("=====================")
+    print(
+        "Forge DAG smoke tests"
+    )
 
-    # Fail immediately if controller isn't running.
+    print(
+        "====================="
+    )
+
+    # Verify controller is reachable.
+    #
+    # A 404 here is expected and proves that
+    # Spring is listening.
     try:
         urllib.request.urlopen(
-            BASE_URL + "/does-not-exist",
+            BASE_URL
+            + "/does-not-exist",
             timeout=2,
         )
+
     except urllib.error.HTTPError:
-        # 404 is fine — controller is reachable.
         pass
+
     except Exception as exc:
         print(
-            f"\nERROR: Controller is not reachable: {exc}"
+            "\nERROR: Controller is "
+            f"not reachable: {exc}"
         )
+
         return 1
+
 
     tests = [
         test_argument_order,
@@ -659,31 +1034,52 @@ def main():
         test_transitive_skip,
         test_workflow_submission,
         test_workflow_cycle_rejected,
+        test_workflow_failure_status,
+        test_workflow_cancellation,
     ]
+
 
     passed = 0
 
+
     for test in tests:
+
         try:
             test()
+
             passed += 1
 
         except Exception as exc:
-            print(f"  FAIL: {exc}")
+            print(
+                f"  FAIL: {exc}"
+            )
 
             print(
-                f"\n{passed}/{len(tests)} tests passed."
+                "\n====================="
+            )
+
+            print(
+                f"{passed}/{len(tests)} "
+                "tests passed"
             )
 
             return 1
 
-    print("\n=====================")
+
     print(
-        f"ALL {passed}/{len(tests)} TESTS PASSED"
+        "\n====================="
+    )
+
+    print(
+        f"ALL {passed}/{len(tests)} "
+        "TESTS PASSED"
     )
 
     return 0
 
 
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(
+        main()
+    )

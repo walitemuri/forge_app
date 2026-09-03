@@ -6,7 +6,11 @@ import dev.forge.controller.api.WorkflowTaskRequest;
 import dev.forge.controller.api.WorkflowTaskResponse;
 
 import dev.forge.controller.task.ForgeTask;
+import dev.forge.controller.task.TaskAttempt;
+import dev.forge.controller.task.TaskAttemptRegistry;
 import dev.forge.controller.task.TaskRegistry;
+import dev.forge.controller.task.TaskService;
+import dev.forge.controller.task.TaskStatus;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,16 +41,30 @@ public class WorkflowService {
     private final TaskRegistry
             taskRegistry;
 
+    private final TaskAttemptRegistry
+            taskAttemptRegistry;
+
+    private final TaskService
+            taskService;
+
 
     public WorkflowService(
             ForgeWorkflowRepository workflowRepository,
-            TaskRegistry taskRegistry) {
+            TaskRegistry taskRegistry,
+            TaskAttemptRegistry taskAttemptRegistry,
+            TaskService taskService) {
 
         this.workflowRepository =
                 workflowRepository;
 
         this.taskRegistry =
                 taskRegistry;
+
+        this.taskAttemptRegistry =
+                taskAttemptRegistry;
+
+        this.taskService =
+                taskService;
     }
 
 
@@ -159,11 +177,6 @@ public class WorkflowService {
         }
 
 
-        /*
-         * Because this method is transactional,
-         * either the entire workflow is persisted
-         * or none of it is.
-         */
         workflowRepository.save(
                 workflow
         );
@@ -204,8 +217,310 @@ public class WorkflowService {
                 workflow.getId(),
                 workflow.getName(),
                 workflow.getCreatedAt(),
+                determineWorkflowStatus(
+                        forgeTasks
+                ),
                 taskResponses
         );
+    }
+
+
+    @Transactional(readOnly = true)
+    public WorkflowResponse getWorkflow(
+            String workflowId) {
+
+        ForgeWorkflow workflow =
+                workflowRepository
+                        .findById(
+                                workflowId
+                        )
+                        .orElse(null);
+
+
+        if (workflow == null) {
+
+            return null;
+        }
+
+
+        List<ForgeTask> tasks =
+                taskRegistry
+                        .getByWorkflowId(
+                                workflowId
+                        );
+
+
+        Map<String, String> taskKeyById =
+                new HashMap<>();
+
+
+        for (ForgeTask task :
+                tasks) {
+
+            taskKeyById.put(
+                    task.getId(),
+                    task.getWorkflowTaskKey()
+            );
+        }
+
+
+        List<WorkflowTaskResponse> responses =
+                new ArrayList<>();
+
+
+        for (ForgeTask task :
+                tasks) {
+
+            List<String> dependencyKeys =
+                    task.getDependsOnTaskIds()
+                            .stream()
+                            .map(
+                                    taskKeyById::get
+                            )
+                            .toList();
+
+
+            responses.add(
+                    new WorkflowTaskResponse(
+                            task.getWorkflowTaskKey(),
+                            task.getId(),
+                            task.getStatus()
+                                    .name(),
+                            dependencyKeys
+                    )
+            );
+        }
+
+
+        return new WorkflowResponse(
+                workflow.getId(),
+                workflow.getName(),
+                workflow.getCreatedAt(),
+                determineWorkflowStatus(
+                        tasks
+                ),
+                responses
+        );
+    }
+
+
+    public WorkflowResponse cancelWorkflow(
+            String workflowId) {
+
+        ForgeWorkflow workflow =
+                workflowRepository
+                        .findById(
+                                workflowId
+                        )
+                        .orElse(null);
+
+
+        if (workflow == null) {
+
+            return null;
+        }
+
+
+        List<ForgeTask> tasks =
+                taskRegistry
+                        .getByWorkflowId(
+                                workflowId
+                        );
+
+
+        for (ForgeTask task :
+                tasks) {
+
+            TaskStatus status =
+                    task.getStatus();
+
+
+            if (status == TaskStatus.SUCCEEDED
+                    || status == TaskStatus.FAILED
+                    || status == TaskStatus.CANCELLED
+                    || status == TaskStatus.SKIPPED) {
+
+                continue;
+            }
+
+
+            try {
+
+                taskService.cancelTask(
+                        task.getId()
+                );
+            }
+            catch (IllegalArgumentException exception) {
+
+                /*
+                 * Task may have changed state
+                 * between our read and cancellation.
+                 */
+            }
+        }
+
+
+        return getWorkflow(
+                workflowId
+        );
+    }
+
+
+    private WorkflowStatus determineWorkflowStatus(
+            List<ForgeTask> tasks) {
+
+        if (tasks.isEmpty()) {
+
+            return WorkflowStatus.PENDING;
+        }
+
+
+        boolean allSucceeded =
+                true;
+
+        boolean active =
+                false;
+
+        boolean pending =
+                false;
+
+        boolean cancelled =
+                false;
+
+        boolean skipped =
+                false;
+
+        boolean permanentFailure =
+                false;
+
+
+        for (ForgeTask task :
+                tasks) {
+
+            TaskStatus status =
+                    task.getStatus();
+
+
+            if (status != TaskStatus.SUCCEEDED) {
+
+                allSucceeded =
+                        false;
+            }
+
+
+            switch (status) {
+
+                case SUCCEEDED -> {
+                }
+
+
+                case DISPATCHED, RUNNING ->
+
+                        active =
+                                true;
+
+
+                case CREATED, BLOCKED, PENDING ->
+
+                        pending =
+                                true;
+
+
+                case CANCELLED ->
+
+                        cancelled =
+                                true;
+
+
+                case SKIPPED ->
+
+                        skipped =
+                                true;
+
+
+                case FAILED, LOST -> {
+
+                    if (hasAutomaticRetryRemaining(
+                            task)) {
+
+                        active =
+                                true;
+                    }
+                    else {
+
+                        permanentFailure =
+                                true;
+                    }
+                }
+            }
+        }
+
+
+        if (allSucceeded) {
+
+            return WorkflowStatus.SUCCEEDED;
+        }
+
+
+        if (permanentFailure) {
+
+            return WorkflowStatus.FAILED;
+        }
+
+
+        if (cancelled) {
+
+            return WorkflowStatus.CANCELLED;
+        }
+
+
+        if (skipped) {
+
+            return WorkflowStatus.FAILED;
+        }
+
+
+        if (active) {
+
+            return WorkflowStatus.RUNNING;
+        }
+
+
+        if (pending) {
+
+            return WorkflowStatus.PENDING;
+        }
+
+
+        return WorkflowStatus.PENDING;
+    }
+
+
+    private boolean hasAutomaticRetryRemaining(
+            ForgeTask task) {
+
+        if (task.isCancelRequested()) {
+
+            return false;
+        }
+
+
+        TaskAttempt latestAttempt =
+                taskAttemptRegistry
+                        .getLatestForTask(
+                                task.getId()
+                        );
+
+
+        if (latestAttempt == null) {
+
+            return false;
+        }
+
+
+        return latestAttempt
+                .getAttemptNumber()
+                < task.getMaxAttempts();
     }
 
 
@@ -458,15 +773,6 @@ public class WorkflowService {
     }
 
 
-    /*
-     * DFS cycle detection.
-     *
-     * state:
-     *
-     * 0 = not visited
-     * 1 = currently visiting
-     * 2 = finished
-     */
     private void validateAcyclic(
             Map<String, NormalizedTask> tasksByKey) {
 
@@ -499,6 +805,7 @@ public class WorkflowService {
 
 
         if (currentState == 2) {
+
             return;
         }
 

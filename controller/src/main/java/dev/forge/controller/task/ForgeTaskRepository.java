@@ -14,8 +14,12 @@ public interface ForgeTaskRepository
     );
 
 
-    List<ForgeTask>
-    findByStatusOrderByCreatedAtAsc(
+    List<ForgeTask> findByStatusOrderByCreatedAtAsc(
             TaskStatus status
+    );
+
+
+    List<ForgeTask> findByWorkflowIdOrderByCreatedAtAsc(
+            String workflowId
     );
 }
