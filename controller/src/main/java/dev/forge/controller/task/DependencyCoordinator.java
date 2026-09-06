@@ -1,11 +1,13 @@
 package dev.forge.controller.task;
 
+import dev.forge.controller.event.ExecutionEventService;
+import dev.forge.controller.event.ExecutionEventType;
+import dev.forge.controller.workflow.WorkflowExecutionGuard;
+
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-
-import dev.forge.controller.workflow.WorkflowExecutionGuard;
 
 
 @Component
@@ -15,15 +17,19 @@ public class DependencyCoordinator {
 
     private final TaskAttemptRegistry
             taskAttemptRegistry;
-    
+
     private final WorkflowExecutionGuard
             workflowExecutionGuard;
+
+    private final ExecutionEventService
+            executionEventService;
 
 
     public DependencyCoordinator(
             TaskRegistry taskRegistry,
             TaskAttemptRegistry taskAttemptRegistry,
-            WorkflowExecutionGuard workflowExecutionGuard) {
+            WorkflowExecutionGuard workflowExecutionGuard,
+            ExecutionEventService executionEventService) {
 
         this.taskRegistry =
                 taskRegistry;
@@ -33,6 +39,9 @@ public class DependencyCoordinator {
 
         this.workflowExecutionGuard =
                 workflowExecutionGuard;
+
+        this.executionEventService =
+                executionEventService;
     }
 
 
@@ -50,42 +59,84 @@ public class DependencyCoordinator {
                 blockedTasks) {
 
             if (task.isCancelRequested()) {
+
                 continue;
             }
 
 
+            // =====================================================
+            // Workflow cancellation
+            // =====================================================
+
             if (workflowExecutionGuard
-                    .isCancellationRequested(task)) {
+                    .isCancellationRequested(
+                            task
+                    )) {
 
                 task.requestCancellation();
+
                 task.markCancelled();
+
 
                 taskRegistry.save(
                         task
                 );
+
+
+                executionEventService.record(
+                        ExecutionEventType.TASK_CANCELLED,
+                        task.getWorkflowId(),
+                        task.getId(),
+                        null,
+                        null,
+                        "Blocked task cancelled because workflow cancellation was requested"
+                );
+
 
                 System.out.println(
                         "■ WORKFLOW-CANCELLED BLOCKED TASK: "
                                 + task.getId()
                 );
 
+
                 continue;
             }
+
 
             List<String> dependencyIds =
                     task.getDependsOnTaskIds();
 
 
+            // =====================================================
+            // Defensive recovery
+            // =====================================================
+
             /*
-             * Defensive recovery.
+             * A BLOCKED task with no dependencies should not
+             * normally exist.
+             *
+             * If one does appear after migration/recovery,
+             * restore it to the runnable PENDING state.
              */
             if (dependencyIds.isEmpty()) {
 
                 task.markPending();
 
+
                 taskRegistry.save(
                         task
                 );
+
+
+                executionEventService.record(
+                        ExecutionEventType.TASK_PENDING,
+                        task.getWorkflowId(),
+                        task.getId(),
+                        null,
+                        null,
+                        "Blocked task had no dependencies and was restored to PENDING"
+                );
+
 
                 continue;
             }
@@ -98,6 +149,10 @@ public class DependencyCoordinator {
                     null;
 
 
+            // =====================================================
+            // Evaluate every parent
+            // =====================================================
+
             for (String dependencyId :
                     dependencyIds) {
 
@@ -108,8 +163,8 @@ public class DependencyCoordinator {
 
 
                 /*
-                 * FK constraints should make this
-                 * impossible.
+                 * FK constraints should make a missing
+                 * dependency impossible.
                  */
                 if (dependency == null) {
 
@@ -131,6 +186,10 @@ public class DependencyCoordinator {
                         false;
 
 
+                /*
+                 * If this dependency can never become
+                 * successful, the child can never execute.
+                 */
                 if (dependencyPreventsExecution(
                         dependency)) {
 
@@ -142,10 +201,10 @@ public class DependencyCoordinator {
             }
 
 
-            /*
-             * One permanently unsuccessful parent
-             * makes the entire child impossible.
-             */
+            // =====================================================
+            // Permanently failed dependency
+            // =====================================================
+
             if (failedDependency != null) {
 
                 skipTask(
@@ -153,21 +212,32 @@ public class DependencyCoordinator {
                         failedDependency
                 );
 
+
                 continue;
             }
 
 
-            /*
-             * Fan-in condition:
-             *
-             * EVERY dependency must succeed.
-             */
+            // =====================================================
+            // Every dependency succeeded
+            // =====================================================
+
             if (allSucceeded) {
 
                 task.markPending();
 
+
                 taskRegistry.save(
                         task
+                );
+
+
+                executionEventService.record(
+                        ExecutionEventType.TASK_PENDING,
+                        task.getWorkflowId(),
+                        task.getId(),
+                        null,
+                        null,
+                        "All dependencies succeeded; task released to PENDING"
                 );
 
 
@@ -187,7 +257,7 @@ public class DependencyCoordinator {
             ForgeTask dependency) {
 
         /*
-         * These can never become successful
+         * These states can never become successful
          * automatically.
          */
         if (dependency.getStatus()
@@ -200,8 +270,8 @@ public class DependencyCoordinator {
 
 
         /*
-         * FAILED and LOST can still have automatic
-         * retries remaining.
+         * FAILED and LOST can still become successful
+         * through automatic retries.
          */
         if (dependency.getStatus()
                 == TaskStatus.FAILED
@@ -216,10 +286,15 @@ public class DependencyCoordinator {
 
 
             if (latestAttempt == null) {
+
                 return false;
             }
 
 
+            /*
+             * Once the retry budget is exhausted,
+             * this dependency is permanently unsuccessful.
+             */
             return latestAttempt
                     .getAttemptNumber()
                     >= dependency
@@ -237,8 +312,22 @@ public class DependencyCoordinator {
 
         task.markSkipped();
 
+
         taskRegistry.save(
                 task
+        );
+
+
+        executionEventService.record(
+                ExecutionEventType.TASK_SKIPPED,
+                task.getWorkflowId(),
+                task.getId(),
+                null,
+                null,
+                "Task skipped because dependency "
+                        + failedDependency.getId()
+                        + " ended in "
+                        + failedDependency.getStatus()
         );
 
 
