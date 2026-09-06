@@ -10,4 +10,9 @@ public interface ForgeWorkflowRepository
 
     List<ForgeWorkflow>
     findAllByOrderByCreatedAtDesc();
+
+
+    boolean existsByIdAndCancelRequestedTrue(
+            String id
+    );
 }

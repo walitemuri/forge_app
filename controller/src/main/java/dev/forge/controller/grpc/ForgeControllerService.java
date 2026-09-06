@@ -81,25 +81,6 @@ public class ForgeControllerService
         WorkerState worker =
                 WorkerRegistry.get(request.getWorkerId());
 
-        System.out.println(
-        "[heartbeat] "
-                + request.getWorkerId()
-                + " CPU="
-                + String.format(
-                        "%.1f",
-                        request.getCpuUsagePercent()
-                )
-                + "% RAM="
-                + request.getMemoryUsedBytes()
-                + " RUNNING="
-                + request.getRunningTasks()
-                + " OUTSTANDING="
-                + worker.getOutstandingTasks()
-                + " LOAD="
-                + worker.getEffectiveLoad()
-);
-
-
         if (worker == null) {
 
             responseObserver.onNext(

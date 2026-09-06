@@ -1859,7 +1859,131 @@ def test_worker_live_load():
 
 
     print("  PASS")
+def test_workflow_cancel_suppresses_retry():
+    print(
+        "\n[TEST] workflow cancellation "
+        "suppresses automatic retry"
+    )
 
+
+    workflow = create_workflow(
+        {
+            "name": "cancel-retry-guard",
+            "tasks": [
+                {
+                    "key": "failing-root",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'import sys; '
+                            'print("FAIL", flush=True); '
+                            'sys.exit(1)'
+                        ),
+                    ],
+                    "maxAttempts": 3,
+                },
+                {
+                    "key": "child",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'print('
+                            '"ERROR: CHILD EXECUTED", '
+                            'flush=True)'
+                        ),
+                    ],
+                    "dependsOn": [
+                        "failing-root",
+                    ],
+                },
+            ],
+        }
+    )
+
+
+    tasks = {
+        task["key"]: task
+        for task in workflow["tasks"]
+    }
+
+
+    root_id = (
+        tasks["failing-root"]["taskId"]
+    )
+
+    child_id = (
+        tasks["child"]["taskId"]
+    )
+    # Attempt 1 fails. With maxAttempts=3,
+    # Forge would normally retry after ~5 seconds.
+    wait_for_status(
+        root_id,
+        "FAILED",
+    )
+
+
+    attempts_before = get_attempts(
+        root_id
+    )
+
+
+    if len(attempts_before) != 1:
+        raise AssertionError(
+            "Expected exactly one attempt "
+            "before workflow cancellation"
+        )
+
+
+    cancel_workflow(
+        workflow["id"]
+    )
+
+
+    wait_for_status(
+        root_id,
+        "CANCELLED",
+    )
+
+
+    wait_for_status(
+        child_id,
+        "CANCELLED",
+    )
+
+
+    # Wait past the first retry backoff.
+    time.sleep(7)
+
+
+    attempts_after = get_attempts(
+        root_id
+    )
+
+
+    if len(attempts_after) != 1:
+        raise AssertionError(
+            "Workflow cancellation failed "
+            "to suppress automatic retry; "
+            f"expected 1 attempt, got "
+            f"{len(attempts_after)}"
+        )
+
+
+    persisted = get_workflow(
+        workflow["id"]
+    )
+
+
+    if persisted["status"] != "CANCELLED":
+        raise AssertionError(
+            "Workflow should be CANCELLED, "
+            f"got {persisted['status']}"
+        )
+
+
+    print("  PASS")
 # ============================================================
 # Main
 # ============================================================
@@ -1911,6 +2035,7 @@ def main():
         test_workflow_selective_retry,
         test_worker_listing,
         test_worker_live_load,
+        test_workflow_cancel_suppresses_retry,
     ]
 
 

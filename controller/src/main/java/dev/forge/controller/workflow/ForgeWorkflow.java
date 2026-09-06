@@ -31,6 +31,11 @@ public class ForgeWorkflow {
     protected ForgeWorkflow() {
     }
 
+    @Column(
+            name = "cancel_requested",
+            nullable = false
+    )
+    private boolean cancelRequested;
 
     public ForgeWorkflow(
             String id,
@@ -54,5 +59,19 @@ public class ForgeWorkflow {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+    
+    public boolean isCancelRequested() {
+        return cancelRequested;
+    }
+
+
+    public void requestCancellation() {
+        this.cancelRequested = true;
+    }
+
+
+    public void clearCancellationRequest() {
+        this.cancelRequested = false;
     }
 }

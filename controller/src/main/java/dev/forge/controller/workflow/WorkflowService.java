@@ -321,13 +321,24 @@ public class WorkflowService {
             return null;
         }
 
-
         List<ForgeTask> tasks =
                 taskRegistry
                         .getByWorkflowId(
                                 workflowId
                         );
 
+        /*
+        * Persist workflow-level cancellation before
+        * touching individual tasks.
+        *
+        * If the process fails during the sweep, the
+        * cancellation intent itself survives.
+        */
+        workflow.requestCancellation();
+
+        workflowRepository.saveAndFlush(
+                workflow
+        );
 
         for (ForgeTask task :
                 tasks) {
@@ -337,9 +348,31 @@ public class WorkflowService {
 
 
             if (status == TaskStatus.SUCCEEDED
-                    || status == TaskStatus.FAILED
                     || status == TaskStatus.CANCELLED
                     || status == TaskStatus.SKIPPED) {
+
+                continue;
+            }
+
+
+            /*
+            * FAILED / LOST may still be waiting for an
+            * automatic retry.
+            *
+            * There is no active process to signal here,
+            * so cancellation can happen immediately at
+            * the logical task level.
+            */
+            if (status == TaskStatus.FAILED
+                    || status == TaskStatus.LOST) {
+
+                task.requestCancellation();
+
+                task.markCancelled();
+
+                taskRegistry.save(
+                        task
+                );
 
                 continue;
             }
@@ -351,8 +384,8 @@ public class WorkflowService {
                         task.getId()
                 );
             }
-            catch (IllegalArgumentException exception) {
-
+            catch (IllegalArgumentException
+                    | IllegalStateException exception) {
                 /*
                  * Task may have changed state
                  * between our read and cancellation.
@@ -516,6 +549,18 @@ public class WorkflowService {
         }
     
     
+        /*
+         * A workflow retry explicitly reopens a cancelled
+         * workflow. Clear the durable workflow-level intent
+         * before making its reset tasks visible to the
+         * coordinators.
+         */
+        workflow.clearCancellationRequest();
+
+        workflowRepository.save(
+                workflow
+        );
+
         /*
          * Save the whole reset atomically.
          *

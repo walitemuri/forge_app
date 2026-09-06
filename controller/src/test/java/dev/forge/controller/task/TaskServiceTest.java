@@ -1,6 +1,7 @@
 package dev.forge.controller.task;
 
 import dev.forge.controller.scheduler.TaskScheduler;
+import dev.forge.controller.workflow.WorkflowExecutionGuard;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,9 @@ class TaskServiceTest {
     @Mock
     private TaskScheduler taskScheduler;
 
+    @Mock
+    private WorkflowExecutionGuard workflowExecutionGuard;
+
     private TaskService taskService;
 
 
@@ -41,7 +45,8 @@ class TaskServiceTest {
                 new TaskService(
                         taskRegistry,
                         taskAttemptRegistry,
-                        taskScheduler
+                        taskScheduler,
+                        workflowExecutionGuard
                 );
     }
 
@@ -68,6 +73,7 @@ class TaskServiceTest {
 
 
         assertFalse(dispatched);
+
         assertEquals(
                 TaskStatus.PENDING,
                 task.getStatus()
@@ -97,7 +103,10 @@ class TaskServiceTest {
 
 
         assertTrue(handled);
-        verifyNoInteractions(taskScheduler);
+
+        verifyNoInteractions(
+                taskScheduler
+        );
     }
 
 

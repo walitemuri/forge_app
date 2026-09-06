@@ -13,6 +13,9 @@ import java.util.UUID;
 import dev.forge.controller.grpc.WorkerRegistry;
 import dev.forge.proto.CancelTask;
 import java.util.ArrayList;
+
+import dev.forge.controller.workflow.WorkflowExecutionGuard;
+
 @Service
 public class TaskService {
 
@@ -21,13 +24,17 @@ public class TaskService {
     private final TaskAttemptRegistry
             taskAttemptRegistry;
 
+    private final WorkflowExecutionGuard
+        workflowExecutionGuard;
+        
     private final TaskScheduler taskScheduler;
 
 
     public TaskService(
-            TaskRegistry taskRegistry,
-            TaskAttemptRegistry taskAttemptRegistry,
-            TaskScheduler taskScheduler) {
+        TaskRegistry taskRegistry,
+        TaskAttemptRegistry taskAttemptRegistry,
+        TaskScheduler taskScheduler,
+        WorkflowExecutionGuard workflowExecutionGuard) {
 
         this.taskRegistry =
                 taskRegistry;
@@ -37,136 +44,139 @@ public class TaskService {
 
         this.taskScheduler =
                 taskScheduler;
+
+        this.workflowExecutionGuard =
+                workflowExecutionGuard;
     }
 
-public ForgeTask submitTask(
-        String command,
-        List<String> arguments,
-        int maxAttempts,
-        int timeoutSeconds,
-        List<String> dependsOnTaskIds) {
+    public ForgeTask submitTask(
+            String command,
+            List<String> arguments,
+            int maxAttempts,
+            int timeoutSeconds,
+            List<String> dependsOnTaskIds) {
 
-    String taskId =
-            UUID.randomUUID()
-                    .toString();
-
-
-    List<String> dependencyIds =
-            dependsOnTaskIds == null
-                    ? List.of()
-                    : dependsOnTaskIds
-                            .stream()
-                            .distinct()
-                            .toList();
+        String taskId =
+                UUID.randomUUID()
+                        .toString();
 
 
-    List<ForgeTask> dependencies =
-            new ArrayList<>();
+        List<String> dependencyIds =
+                dependsOnTaskIds == null
+                        ? List.of()
+                        : dependsOnTaskIds
+                                .stream()
+                                .distinct()
+                                .toList();
 
 
-    /*
-     * Every dependency must already exist.
-     *
-     * Since the new task does not exist yet,
-     * this also prevents self-dependencies.
-     */
-    for (String dependencyId :
-            dependencyIds) {
-
-        if (dependencyId == null
-                || dependencyId.isBlank()) {
-
-            throw new IllegalArgumentException(
-                    "Dependency task id must not be empty"
-            );
-        }
+        List<ForgeTask> dependencies =
+                new ArrayList<>();
 
 
-        ForgeTask dependency =
-                taskRegistry.get(
-                        dependencyId
+        /*
+        * Every dependency must already exist.
+        *
+        * Since the new task does not exist yet,
+        * this also prevents self-dependencies.
+        */
+        for (String dependencyId :
+                dependencyIds) {
+
+            if (dependencyId == null
+                    || dependencyId.isBlank()) {
+
+                throw new IllegalArgumentException(
+                        "Dependency task id must not be empty"
                 );
+            }
 
 
-        if (dependency == null) {
-
-            throw new IllegalArgumentException(
-                    "Dependency task "
-                            + dependencyId
-                            + " does not exist"
-            );
-        }
-
-
-        dependencies.add(
-                dependency
-        );
-    }
-
-
-    ForgeTask task =
-            new ForgeTask(
-                    taskId,
-                    command,
-                    arguments,
-                    maxAttempts,
-                    timeoutSeconds,
-                    dependencyIds
-            );
-
-
-    /*
-     * A task is runnable when:
-     *
-     * - it has no dependencies, OR
-     * - every dependency already succeeded.
-     *
-     * Otherwise DependencyCoordinator will
-     * continue watching it.
-     */
-    boolean allDependenciesSucceeded =
-            dependencies
-                    .stream()
-                    .allMatch(
-                            dependency ->
-                                    dependency.getStatus()
-                                            == TaskStatus.SUCCEEDED
+            ForgeTask dependency =
+                    taskRegistry.get(
+                            dependencyId
                     );
 
 
-    if (allDependenciesSucceeded) {
+            if (dependency == null) {
 
-        task.markPending();
-    }
-    else {
+                throw new IllegalArgumentException(
+                        "Dependency task "
+                                + dependencyId
+                                + " does not exist"
+                );
+            }
 
-        task.markBlocked();
-    }
 
-
-    task =
-            taskRegistry.register(
-                    task
+            dependencies.add(
+                    dependency
             );
+        }
 
 
-    System.out.println(
-            "＋ TASK CREATED: "
-                    + taskId
-                    + " status="
-                    + task.getStatus()
-                    + " dependsOn="
-                    + dependencyIds
-    );
+        ForgeTask task =
+                new ForgeTask(
+                        taskId,
+                        command,
+                        arguments,
+                        maxAttempts,
+                        timeoutSeconds,
+                        dependencyIds
+                );
 
 
-    return task;
-}
-    /*
-     * Manual retry only.
-     *
-     * Automatic retries come later.
-     */
+        /*
+        * A task is runnable when:
+        *
+        * - it has no dependencies, OR
+        * - every dependency already succeeded.
+        *
+        * Otherwise DependencyCoordinator will
+        * continue watching it.
+        */
+        boolean allDependenciesSucceeded =
+                dependencies
+                        .stream()
+                        .allMatch(
+                                dependency ->
+                                        dependency.getStatus()
+                                                == TaskStatus.SUCCEEDED
+                        );
+
+
+        if (allDependenciesSucceeded) {
+
+            task.markPending();
+        }
+        else {
+
+            task.markBlocked();
+        }
+
+
+        task =
+                taskRegistry.register(
+                        task
+                );
+
+
+        System.out.println(
+                "＋ TASK CREATED: "
+                        + taskId
+                        + " status="
+                        + task.getStatus()
+                        + " dependsOn="
+                        + dependencyIds
+        );
+
+
+        return task;
+    }
+        /*
+        * Manual retry only.
+        *
+        * Automatic retries come later.
+        */
     public synchronized boolean retryAutomatically(
         String taskId) {
 
@@ -179,7 +189,22 @@ public ForgeTask submitTask(
     if (task == null) {
         return false;
     }
+    if (workflowExecutionGuard
+        .isCancellationRequested(task)) {
 
+        throw new IllegalArgumentException(
+                "Task "
+                        + taskId
+                        + " cannot be retried because "
+                        + "its workflow cancellation "
+                        + "was requested"
+        );
+    }
+    if (workflowExecutionGuard
+            .isCancellationRequested(task)) {
+
+        return false;
+    }
 
     if (task.isCancelRequested()) {
         return false;
@@ -530,12 +555,30 @@ public ForgeTask submitTask(
     public synchronized boolean
         tryDispatchPendingTask(
                 String taskId) {
+        
 
         ForgeTask task =
                 taskRegistry.get(
                         taskId
                 );
 
+        if (workflowExecutionGuard
+                .isCancellationRequested(task)) {
+
+            task.requestCancellation();
+            task.markCancelled();
+
+            taskRegistry.save(
+                    task
+            );
+
+            System.out.println(
+                    "■ WORKFLOW-CANCELLED PENDING TASK: "
+                            + taskId
+            );
+
+            return true;
+        }
 
         /*
         * It may have been cancelled or changed
@@ -546,6 +589,12 @@ public ForgeTask submitTask(
                 != TaskStatus.PENDING) {
 
                 return true;
+        }
+
+        if (workflowExecutionGuard
+                .isCancellationRequested(task)) {
+
+            return true;
         }
 
 
@@ -621,6 +670,8 @@ public ForgeTask submitTask(
                 return task;
         }
         if (task.getStatus()
+                == TaskStatus.CREATED
+                || task.getStatus()
                 == TaskStatus.PENDING
                 || task.getStatus()
                 == TaskStatus.BLOCKED) {

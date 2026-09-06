@@ -5,6 +5,8 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
+import dev.forge.controller.workflow.WorkflowExecutionGuard;
+
 
 @Component
 public class DependencyCoordinator {
@@ -13,17 +15,24 @@ public class DependencyCoordinator {
 
     private final TaskAttemptRegistry
             taskAttemptRegistry;
+    
+    private final WorkflowExecutionGuard
+            workflowExecutionGuard;
 
 
     public DependencyCoordinator(
             TaskRegistry taskRegistry,
-            TaskAttemptRegistry taskAttemptRegistry) {
+            TaskAttemptRegistry taskAttemptRegistry,
+            WorkflowExecutionGuard workflowExecutionGuard) {
 
         this.taskRegistry =
                 taskRegistry;
 
         this.taskAttemptRegistry =
                 taskAttemptRegistry;
+
+        this.workflowExecutionGuard =
+                workflowExecutionGuard;
     }
 
 
@@ -44,6 +53,24 @@ public class DependencyCoordinator {
                 continue;
             }
 
+
+            if (workflowExecutionGuard
+                    .isCancellationRequested(task)) {
+
+                task.requestCancellation();
+                task.markCancelled();
+
+                taskRegistry.save(
+                        task
+                );
+
+                System.out.println(
+                        "■ WORKFLOW-CANCELLED BLOCKED TASK: "
+                                + task.getId()
+                );
+
+                continue;
+            }
 
             List<String> dependencyIds =
                     task.getDependsOnTaskIds();
