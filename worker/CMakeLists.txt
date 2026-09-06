@@ -58,6 +58,7 @@ add_executable(
     src/main.cpp
     src/ProcessExecutor.cpp
     src/TaskExecutorPool.cpp
+    src/ReliableEventSender.cpp
     ${PROTO_SRCS}
 )
 

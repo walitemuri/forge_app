@@ -3,14 +3,16 @@ package dev.forge.controller.grpc;
 import dev.forge.controller.task.ForgeTask;
 import dev.forge.controller.task.TaskAttempt;
 import dev.forge.controller.task.TaskAttemptRegistry;
-import dev.forge.controller.task.TaskRegistry;
 import dev.forge.controller.task.TaskAttemptStatus;
+import dev.forge.controller.task.TaskRegistry;
+
 import dev.forge.proto.ControllerMessage;
 import dev.forge.proto.ForgeControllerGrpc;
 import dev.forge.proto.HeartbeatRequest;
 import dev.forge.proto.HeartbeatResponse;
 import dev.forge.proto.RegisterWorkerRequest;
 import dev.forge.proto.RegisterWorkerResponse;
+import dev.forge.proto.WorkerEventAck;
 import dev.forge.proto.WorkerMessage;
 
 import io.grpc.stub.StreamObserver;
@@ -35,6 +37,10 @@ public class ForgeControllerService
     }
 
 
+    // =========================================================
+    // Worker registration
+    // =========================================================
+
     @Override
     public void registerWorker(
             RegisterWorkerRequest request,
@@ -48,7 +54,10 @@ public class ForgeControllerService
                 request.getOperatingSystem()
         );
 
-        WorkerRegistry.register(worker);
+
+        WorkerRegistry.register(
+                worker
+        );
 
 
         System.out.println();
@@ -63,16 +72,26 @@ public class ForgeControllerService
 
 
         RegisterWorkerResponse response =
-                RegisterWorkerResponse.newBuilder()
+                RegisterWorkerResponse
+                        .newBuilder()
                         .setAccepted(true)
-                        .setMessage("Worker registered successfully")
+                        .setMessage(
+                                "Worker registered successfully"
+                        )
                         .build();
 
 
-        responseObserver.onNext(response);
+        responseObserver.onNext(
+                response
+        );
+
         responseObserver.onCompleted();
     }
 
+
+    // =========================================================
+    // Heartbeat
+    // =========================================================
 
     @Override
     public void heartbeat(
@@ -80,12 +99,16 @@ public class ForgeControllerService
             StreamObserver<HeartbeatResponse> responseObserver) {
 
         WorkerState worker =
-                WorkerRegistry.get(request.getWorkerId());
+                WorkerRegistry.get(
+                        request.getWorkerId()
+                );
+
 
         if (worker == null) {
 
             responseObserver.onNext(
-                    HeartbeatResponse.newBuilder()
+                    HeartbeatResponse
+                            .newBuilder()
                             .setAccepted(false)
                             .build()
             );
@@ -132,14 +155,20 @@ public class ForgeControllerService
 
 
         responseObserver.onNext(
-                HeartbeatResponse.newBuilder()
+                HeartbeatResponse
+                        .newBuilder()
                         .setAccepted(true)
                         .build()
         );
 
+
         responseObserver.onCompleted();
     }
 
+
+    // =========================================================
+    // Long-lived worker command stream
+    // =========================================================
 
     @Override
     public StreamObserver<WorkerMessage> connectWorker(
@@ -150,21 +179,101 @@ public class ForgeControllerService
             private String connectedWorkerId;
 
 
+            /*
+             * ACK a durable worker event.
+             *
+             * We deliberately send through WorkerState instead
+             * of calling responseObserver.onNext() directly.
+             *
+             * WorkerState.sendCommand() is synchronized, which
+             * serializes ACKs with TaskAssignment and CancelTask
+             * writes on this same gRPC stream.
+             */
+            private void acknowledgeEvent(
+                    String eventId) {
+
+                if (eventId == null
+                        || eventId.isBlank()) {
+
+                    return;
+                }
+
+
+                if (connectedWorkerId == null) {
+
+                    System.err.println(
+                            "Cannot ACK worker event before WorkerHello: "
+                                    + eventId
+                    );
+
+                    return;
+                }
+
+
+                WorkerState worker =
+                        WorkerRegistry.get(
+                                connectedWorkerId
+                        );
+
+
+                if (worker == null) {
+
+                    System.err.println(
+                            "Cannot ACK worker event for unknown worker: "
+                                    + connectedWorkerId
+                                    + " event="
+                                    + eventId
+                    );
+
+                    return;
+                }
+
+
+                ControllerMessage ack =
+                        ControllerMessage
+                                .newBuilder()
+                                .setEventAck(
+                                        WorkerEventAck
+                                                .newBuilder()
+                                                .setEventId(
+                                                        eventId
+                                                )
+                                                .build()
+                                )
+                                .build();
+
+
+                if (!worker.sendCommand(
+                        ack)) {
+
+                    System.err.println(
+                            "Failed to ACK worker event: "
+                                    + eventId
+                    );
+                }
+            }
+
+
             @Override
-            public void onNext(WorkerMessage message) {
+            public void onNext(
+                    WorkerMessage message) {
 
                 // =================================================
-                // Worker connected
+                // WorkerHello
                 // =================================================
 
                 if (message.hasHello()) {
 
                     connectedWorkerId =
-                            message.getHello().getWorkerId();
+                            message
+                                    .getHello()
+                                    .getWorkerId();
 
 
                     WorkerState worker =
-                            WorkerRegistry.get(connectedWorkerId);
+                            WorkerRegistry.get(
+                                    connectedWorkerId
+                            );
 
 
                     if (worker == null) {
@@ -187,208 +296,542 @@ public class ForgeControllerService
                             "✓ COMMAND STREAM CONNECTED: "
                                     + connectedWorkerId
                     );
+
+
+                    return;
                 }
 
 
                 // =================================================
-                // Worker accepted task
+                // TaskAccepted
                 // =================================================
 
                 if (message.hasTaskAccepted()) {
 
-                    String taskId = message.getTaskAccepted().getTaskId();
-                    String attemptId = message.getTaskAccepted().getAttemptId();
-                    ForgeTask task = taskRegistry.get(taskId);
-                    TaskAttempt attempt = taskAttemptRegistry.get(attemptId);
+                    String taskId =
+                            message
+                                    .getTaskAccepted()
+                                    .getTaskId();
 
+                    String attemptId =
+                            message
+                                    .getTaskAccepted()
+                                    .getAttemptId();
+
+                    String eventId =
+                            message
+                                    .getTaskAccepted()
+                                    .getEventId();
+
+
+                    ForgeTask task =
+                            taskRegistry.get(
+                                    taskId
+                            );
+
+                    TaskAttempt attempt =
+                            taskAttemptRegistry.get(
+                                    attemptId
+                            );
+
+
+                    /*
+                     * These cases are permanently non-actionable.
+                     *
+                     * ACK them so a malformed/stale event cannot
+                     * remain in the worker outbox forever.
+                     */
                     if (task == null) {
-                        System.err.println("TaskAccepted for unknown task: " + taskId);
-                        return;
-                    }
-                    if (attempt == null) {
-                        System.err.println("TaskAccepted for unknown attempt: " + attemptId);
-                        return;
-                    }
-                    if (!attempt.getTaskId().equals(taskId)) {
-                        System.err.println("Attempt/task mismatch: attempt=" + attemptId + " task=" + taskId);
+
+                        System.err.println(
+                                "TaskAccepted for unknown task: "
+                                        + taskId
+                        );
+
+                        acknowledgeEvent(
+                                eventId
+                        );
+
                         return;
                     }
 
-                    TaskAttempt latestAttempt = taskAttemptRegistry.getLatestForTask(taskId);
-                    if (latestAttempt == null || !latestAttempt.getId().equals(attemptId)) {
-                        System.err.println("Ignoring stale TaskAccepted: task=" + taskId + " attempt=" + attemptId);
-                        return;
-                    }
-                    if (connectedWorkerId == null
-                            || !connectedWorkerId.equals(attempt.getWorkerId())) {
+
+                    if (attempt == null) {
+
                         System.err.println(
-                                "Ignoring TaskAccepted from wrong worker: task=" + taskId
-                                        + " attempt=" + attemptId
-                                        + " expectedWorker=" + attempt.getWorkerId()
-                                        + " actualWorker=" + connectedWorkerId
+                                "TaskAccepted for unknown attempt: "
+                                        + attemptId
                         );
+
+                        acknowledgeEvent(
+                                eventId
+                        );
+
                         return;
                     }
+
+
+                    if (!attempt
+                            .getTaskId()
+                            .equals(taskId)) {
+
+                        System.err.println(
+                                "Attempt/task mismatch: attempt="
+                                        + attemptId
+                                        + " task="
+                                        + taskId
+                        );
+
+                        acknowledgeEvent(
+                                eventId
+                        );
+
+                        return;
+                    }
+
+
+                    TaskAttempt latestAttempt =
+                            taskAttemptRegistry
+                                    .getLatestForTask(
+                                            taskId
+                                    );
+
+
+                    if (latestAttempt == null
+                            || !latestAttempt
+                            .getId()
+                            .equals(attemptId)) {
+
+                        System.err.println(
+                                "Ignoring stale TaskAccepted: task="
+                                        + taskId
+                                        + " attempt="
+                                        + attemptId
+                        );
+
+
+                        /*
+                         * A newer attempt already exists.
+                         * This old event must never mutate state.
+                         */
+                        acknowledgeEvent(
+                                eventId
+                        );
+
+                        return;
+                    }
+
+
+                    if (connectedWorkerId == null
+                            || !connectedWorkerId
+                            .equals(
+                                    attempt.getWorkerId()
+                            )) {
+
+                        System.err.println(
+                                "Ignoring TaskAccepted from wrong worker: task="
+                                        + taskId
+                                        + " attempt="
+                                        + attemptId
+                                        + " expectedWorker="
+                                        + attempt.getWorkerId()
+                                        + " actualWorker="
+                                        + connectedWorkerId
+                        );
+
+                        acknowledgeEvent(
+                                eventId
+                        );
+
+                        return;
+                    }
+
+
+                    /*
+                     * Duplicate replay:
+                     *
+                     * The first copy may have already changed the
+                     * attempt to RUNNING, but its ACK could have
+                     * been lost.
+                     *
+                     * Do not perform the state transition twice.
+                     * Just ACK the replay.
+                     */
                     if (attempt.getStatus()
                             != TaskAttemptStatus.DISPATCHED) {
 
                         System.err.println(
-                                "Ignoring TaskAccepted for non-dispatched attempt: "
+                                "Ignoring duplicate/stale TaskAccepted: "
                                         + attemptId
                                         + " status="
                                         + attempt.getStatus()
                         );
 
+
+                        acknowledgeEvent(
+                                eventId
+                        );
+
                         return;
                     }
 
+
+                    /*
+                     * Persist state BEFORE ACK.
+                     */
                     attempt.markRunning();
-                    taskAttemptRegistry.save(attempt);
+
+                    taskAttemptRegistry.save(
+                            attempt
+                    );
+
+
                     task.markRunning();
-                    taskRegistry.save(task);
+
+                    taskRegistry.save(
+                            task
+                    );
+
+
+                    /*
+                     * Only after durable state has been updated may
+                     * the worker remove this event from its outbox.
+                     */
+                    acknowledgeEvent(
+                            eventId
+                    );
+
 
                     System.out.println(
-                            "▶ TASK RUNNING: " + taskId + " attempt=" + attemptId
+                            "▶ TASK RUNNING: "
+                                    + taskId
+                                    + " attempt="
+                                    + attemptId
                     );
+
+
+                    return;
                 }
 
 
                 // =================================================
-                // Worker completed task
+                // TaskResult
                 // =================================================
 
                 if (message.hasTaskResult()) {
 
-                    var result = message.getTaskResult();
-                    String taskId = result.getTaskId();
-                    String attemptId = result.getAttemptId();
-                    ForgeTask task = taskRegistry.get(taskId);
-                    TaskAttempt attempt = taskAttemptRegistry.get(attemptId);
+                    var result =
+                            message.getTaskResult();
+
+
+                    String taskId =
+                            result.getTaskId();
+
+                    String attemptId =
+                            result.getAttemptId();
+
+                    String eventId =
+                            result.getEventId();
+
+
+                    ForgeTask task =
+                            taskRegistry.get(
+                                    taskId
+                            );
+
+                    TaskAttempt attempt =
+                            taskAttemptRegistry.get(
+                                    attemptId
+                            );
+
 
                     if (task == null) {
-                        System.err.println("TaskResult for unknown task: " + taskId);
-                        return;
-                    }
-                    if (attempt == null) {
-                        System.err.println("TaskResult for unknown attempt: " + attemptId);
-                        return;
-                    }
-                    if (!attempt.getTaskId().equals(taskId)) {
-                        System.err.println("Attempt/task mismatch: attempt=" + attemptId + " task=" + taskId);
-                        return;
-                    }
 
-                    TaskAttempt latestAttempt = taskAttemptRegistry.getLatestForTask(taskId);
-                    if (latestAttempt == null || !latestAttempt.getId().equals(attemptId)) {
-                        System.err.println("Ignoring stale TaskResult: task=" + taskId + " attempt=" + attemptId);
-                        return;
-                    }
-                    if (connectedWorkerId == null
-                            || !connectedWorkerId.equals(attempt.getWorkerId())) {
                         System.err.println(
-                                "Ignoring TaskResult from wrong worker: task=" + taskId
-                                        + " attempt=" + attemptId
-                                        + " expectedWorker=" + attempt.getWorkerId()
-                                        + " actualWorker=" + connectedWorkerId
+                                "TaskResult for unknown task: "
+                                        + taskId
                         );
+
+                        acknowledgeEvent(
+                                eventId
+                        );
+
                         return;
                     }
 
-                    WorkerState worker = WorkerRegistry.get(attempt.getWorkerId());
+
+                    if (attempt == null) {
+
+                        System.err.println(
+                                "TaskResult for unknown attempt: "
+                                        + attemptId
+                        );
+
+                        acknowledgeEvent(
+                                eventId
+                        );
+
+                        return;
+                    }
+
+
+                    if (!attempt
+                            .getTaskId()
+                            .equals(taskId)) {
+
+                        System.err.println(
+                                "Attempt/task mismatch: attempt="
+                                        + attemptId
+                                        + " task="
+                                        + taskId
+                        );
+
+                        acknowledgeEvent(
+                                eventId
+                        );
+
+                        return;
+                    }
+
+
+                    TaskAttempt latestAttempt =
+                            taskAttemptRegistry
+                                    .getLatestForTask(
+                                            taskId
+                                    );
+
+
+                    if (latestAttempt == null
+                            || !latestAttempt
+                            .getId()
+                            .equals(attemptId)) {
+
+                        System.err.println(
+                                "Ignoring stale TaskResult: task="
+                                        + taskId
+                                        + " attempt="
+                                        + attemptId
+                        );
+
+
+                        acknowledgeEvent(
+                                eventId
+                        );
+
+                        return;
+                    }
+
+
+                    if (connectedWorkerId == null
+                            || !connectedWorkerId
+                            .equals(
+                                    attempt.getWorkerId()
+                            )) {
+
+                        System.err.println(
+                                "Ignoring TaskResult from wrong worker: task="
+                                        + taskId
+                                        + " attempt="
+                                        + attemptId
+                                        + " expectedWorker="
+                                        + attempt.getWorkerId()
+                                        + " actualWorker="
+                                        + connectedWorkerId
+                        );
+
+
+                        acknowledgeEvent(
+                                eventId
+                        );
+
+                        return;
+                    }
+
+
+                    /*
+                     * A result replay can arrive after the original
+                     * event was already persisted.
+                     *
+                     * It can also arrive after restart recovery
+                     * marked the attempt LOST.
+                     *
+                     * Either way, terminal state wins.
+                     */
                     if (attempt.getStatus()
                             != TaskAttemptStatus.DISPATCHED
                             && attempt.getStatus()
                             != TaskAttemptStatus.RUNNING) {
 
                         System.err.println(
-                                "Ignoring TaskResult for terminal attempt: "
+                                "Ignoring duplicate/stale TaskResult: "
                                         + attemptId
                                         + " status="
                                         + attempt.getStatus()
                         );
 
+
+                        acknowledgeEvent(
+                                eventId
+                        );
+
                         return;
                     }
+
+
+                    WorkerState worker =
+                            WorkerRegistry.get(
+                                    attempt.getWorkerId()
+                            );
+
+
                     if (worker != null) {
+
                         worker.releaseTask();
                     }
 
+
+                    // =============================================
+                    // Cancellation result
+                    // =============================================
+
                     if (result.getCancelled()) {
+
                         attempt.markCancelled(
-                                result.getExitCode(), result.getStdout(), result.getStderr());
-                        taskAttemptRegistry.save(attempt);
+                                result.getExitCode(),
+                                result.getStdout(),
+                                result.getStderr()
+                        );
+
+
+                        taskAttemptRegistry.save(
+                                attempt
+                        );
+
+
                         task.markCancelled(
-                                result.getExitCode(), result.getStdout(), result.getStderr());
-                        taskRegistry.save(task);
+                                result.getExitCode(),
+                                result.getStdout(),
+                                result.getStderr()
+                        );
+
+
+                        taskRegistry.save(
+                                task
+                        );
                     }
+
+                    // =============================================
+                    // Normal result
+                    // =============================================
+
                     else {
+
                         attempt.complete(
-                                result.getSuccess(), result.getExitCode(),
-                                result.getStdout(), result.getStderr());
-                        taskAttemptRegistry.save(attempt);
+                                result.getSuccess(),
+                                result.getExitCode(),
+                                result.getStdout(),
+                                result.getStderr()
+                        );
+
+
+                        taskAttemptRegistry.save(
+                                attempt
+                        );
+
+
                         task.clearCancellationRequest();
+
+
                         task.complete(
-                                result.getSuccess(), result.getExitCode(),
-                                result.getStdout(), result.getStderr());
-                        taskRegistry.save(task);
+                                result.getSuccess(),
+                                result.getExitCode(),
+                                result.getStdout(),
+                                result.getStderr()
+                        );
+
+
+                        taskRegistry.save(
+                                task
+                        );
                     }
 
 
-                        System.out.println();
+                    /*
+                     * State is now persisted.
+                     *
+                     * ACK only after both attempt + logical task
+                     * state were saved.
+                     */
+                    acknowledgeEvent(
+                            eventId
+                    );
+
+
+                    System.out.println();
+                    System.out.println(
+                            "=== TASK FINISHED ==="
+                    );
+
+                    System.out.println(
+                            "Task: "
+                                    + taskId
+                    );
+
+                    System.out.println(
+                            "Attempt: "
+                                    + attemptId
+                    );
+
+                    System.out.println(
+                            "Status: "
+                                    + task.getStatus()
+                    );
+
+                    System.out.println(
+                            "Exit code: "
+                                    + result.getExitCode()
+                    );
+
+                    System.out.println(
+                            "stdout:"
+                    );
+
+                    System.out.println(
+                            result.getStdout()
+                    );
+
+
+                    if (!result
+                            .getStderr()
+                            .isEmpty()) {
+
                         System.out.println(
-                                "=== TASK FINISHED ==="
+                                "stderr:"
                         );
 
                         System.out.println(
-                                "Task: "
-                                        + taskId
+                                result.getStderr()
                         );
-
-                        System.out.println(
-                                "Attempt: "
-                                        + attemptId
-                        );
-
-                        System.out.println(
-                                "Status: "
-                                        + task.getStatus()
-                        );
-
-                        System.out.println(
-                                "Exit code: "
-                                        + result.getExitCode()
-                        );
-
-                        System.out.println(
-                                "stdout:"
-                        );
-
-                        System.out.println(
-                                result.getStdout()
-                        );
+                    }
 
 
-                        if (!result.getStderr().isEmpty()) {
-
-                            System.out.println(
-                                    "stderr:"
-                            );
-
-                            System.out.println(
-                                    result.getStderr()
-                            );
-                        }
+                    System.out.println(
+                            "====================="
+                    );
 
 
-                        System.out.println(
-                                "====================="
-                        );
+                    return;
                 }
             }
 
 
+            // =====================================================
+            // Stream error
+            // =====================================================
+
             @Override
-            public void onError(Throwable throwable) {
+            public void onError(
+                    Throwable throwable) {
 
                 System.err.println(
                         "Worker stream error: "
@@ -398,23 +841,13 @@ public class ForgeControllerService
                 );
 
 
-                if (connectedWorkerId != null) {
-
-                    WorkerState worker =
-                            WorkerRegistry.get(
-                                    connectedWorkerId
-                            );
-
-
-                    if (worker != null) {
-
-                        worker.setCommandStream(
-                                null
-                        );
-                    }
-                }
+                clearCommandStream();
             }
 
+
+            // =====================================================
+            // Stream completed
+            // =====================================================
 
             @Override
             public void onCompleted() {
@@ -425,24 +858,49 @@ public class ForgeControllerService
                 );
 
 
-                if (connectedWorkerId != null) {
-
-                    WorkerState worker =
-                            WorkerRegistry.get(
-                                    connectedWorkerId
-                            );
+                clearCommandStream();
 
 
-                    if (worker != null) {
+                responseObserver.onCompleted();
+            }
+
+
+            // =====================================================
+            // Stream cleanup
+            // =====================================================
+
+            private void clearCommandStream() {
+
+                if (connectedWorkerId == null) {
+
+                    return;
+                }
+
+
+                WorkerState worker =
+                        WorkerRegistry.get(
+                                connectedWorkerId
+                        );
+
+
+                if (worker != null) {
+
+                    /*
+                     * Only clear this stream if it is still the
+                     * stream stored for this connection.
+                     *
+                     * A reconnect may already have installed a
+                     * newer stream by the time an old stream's
+                     * onError callback runs.
+                     */
+                    if (worker.getCommandStream()
+                            == responseObserver) {
 
                         worker.setCommandStream(
                                 null
                         );
                     }
                 }
-
-
-                responseObserver.onCompleted();
             }
         };
     }

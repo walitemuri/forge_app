@@ -6,15 +6,14 @@ option java_package = "dev.forge.proto";
 option java_multiple_files = true;
 
 service ForgeController {
-
   rpc RegisterWorker(RegisterWorkerRequest)
       returns (RegisterWorkerResponse);
 
   rpc Heartbeat(HeartbeatRequest)
       returns (HeartbeatResponse);
-  
+
   rpc ConnectWorker(stream WorkerMessage)
-    returns (stream ControllerMessage);
+      returns (stream ControllerMessage);
 }
 
 message WorkerMessage {
@@ -30,6 +29,7 @@ message ControllerMessage {
   oneof payload {
     TaskAssignment task_assignment = 1;
     CancelTask cancel_task = 2;
+    WorkerEventAck event_ack = 3;
   }
 }
 
@@ -64,20 +64,22 @@ message CancelTask {
 message TaskAccepted {
   string task_id = 1;
   string attempt_id = 2;
+  string event_id = 3;
 }
 
 message TaskResult {
   string task_id = 1;
-
   int32 exit_code = 2;
-
   string stdout = 3;
   string stderr = 4;
-
   bool success = 5;
-
   string attempt_id = 6;
   bool cancelled = 7;
+  string event_id = 8;
+}
+
+message WorkerEventAck {
+  string event_id = 1;
 }
 
 message RegisterWorkerRequest {
@@ -95,15 +97,11 @@ message RegisterWorkerResponse {
 
 message HeartbeatRequest {
   string worker_id = 1;
-
   double cpu_usage_percent = 2;
-
   uint64 memory_used_bytes = 3;
-
   uint32 running_tasks = 4;
 }
 
 message HeartbeatResponse {
   bool accepted = 1;
 }
-

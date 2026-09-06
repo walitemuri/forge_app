@@ -7,12 +7,13 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
-#include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <utility>
 
 #include "ProcessExecutor.h"
+#include "ReliableEventSender.h"
 #include "TaskExecutorPool.h"
 #include "forge.grpc.pb.h"
 
@@ -26,97 +27,35 @@
 
 #include <unistd.h>
 
+
 struct CpuTimes
 {
     uint64_t idle;
     uint64_t total;
 };
 
+
 using CommandStream =
-    grpc::ClientReaderWriter<
-        forge::v1::WorkerMessage,
-        forge::v1::ControllerMessage>;
+    ReliableEventSender::CommandStream;
 
-/*
- * Task executor threads live for the lifetime of the
- * worker, while controller command streams may come
- * and go.
- *
- * This object lets executor callbacks always write to
- * the CURRENT controller stream.
- */
-class CommandStreamState
-{
-
-public:
-    void set(
-        std::shared_ptr<CommandStream> stream)
-    {
-
-        std::lock_guard<std::mutex> lock(
-            mutex_);
-
-        stream_ =
-            std::move(stream);
-    }
-
-    void clear(
-        const std::shared_ptr<CommandStream> &expected)
-    {
-
-        std::lock_guard<std::mutex> lock(
-            mutex_);
-
-        if (stream_ == expected)
-        {
-
-            stream_.reset();
-        }
-    }
-
-    bool send(
-        const forge::v1::WorkerMessage &message)
-    {
-
-        std::lock_guard<std::mutex> lock(
-            mutex_);
-
-        if (!stream_)
-        {
-
-            return false;
-        }
-
-        return stream_->Write(
-            message);
-    }
-
-private:
-    std::mutex mutex_;
-
-    std::shared_ptr<CommandStream>
-        stream_;
-};
 
 std::string getHostname()
 {
-
     char hostname[256]{};
 
     if (gethostname(
             hostname,
             sizeof(hostname)) == 0)
     {
-
         return hostname;
     }
 
     return "unknown";
 }
 
+
 uint64_t getTotalMemoryBytes()
 {
-
 #ifdef __APPLE__
 
     uint64_t memory = 0;
@@ -131,7 +70,6 @@ uint64_t getTotalMemoryBytes()
             nullptr,
             0) == 0)
     {
-
         return memory;
     }
 
@@ -143,11 +81,14 @@ uint64_t getTotalMemoryBytes()
 
     if (sysinfo(&info) == 0)
     {
-
-        return static_cast<uint64_t>(
-                   info.totalram) *
-               static_cast<uint64_t>(
-                   info.mem_unit);
+        return
+            static_cast<uint64_t>(
+                info.totalram
+            )
+            *
+            static_cast<uint64_t>(
+                info.mem_unit
+            );
     }
 
     return 0;
@@ -155,9 +96,9 @@ uint64_t getTotalMemoryBytes()
 #endif
 }
 
+
 uint64_t getMemoryUsedBytes()
 {
-
 #ifdef __APPLE__
 
     mach_msg_type_number_t count =
@@ -168,100 +109,120 @@ uint64_t getMemoryUsedBytes()
     mach_port_t host =
         mach_host_self();
 
+
     kern_return_t result =
         host_statistics64(
             host,
             HOST_VM_INFO64,
             reinterpret_cast<
-                host_info64_t>(
-                &vmStats),
-            &count);
+                host_info64_t
+            >(
+                &vmStats
+            ),
+            &count
+        );
+
 
     if (result != KERN_SUCCESS)
     {
-
         return 0;
     }
 
+
     vm_size_t pageSize = 0;
+
 
     if (host_page_size(
             host,
             &pageSize) != KERN_SUCCESS)
     {
-
         return 0;
     }
 
+
     const uint64_t usedPages =
         static_cast<uint64_t>(
-            vmStats.active_count) +
+            vmStats.active_count
+        )
+        +
         static_cast<uint64_t>(
-            vmStats.wire_count) +
+            vmStats.wire_count
+        )
+        +
         static_cast<uint64_t>(
-            vmStats.compressor_page_count);
+            vmStats.compressor_page_count
+        );
 
-    return usedPages * static_cast<uint64_t>(
-                           pageSize);
+
+    return usedPages *
+        static_cast<uint64_t>(
+            pageSize
+        );
 
 #else
 
     std::ifstream file(
-        "/proc/meminfo");
+        "/proc/meminfo"
+    );
 
     std::string line;
 
     uint64_t totalKb = 0;
     uint64_t availableKb = 0;
 
-    while (std::getline(
-        file,
-        line))
-    {
 
+    while (std::getline(
+            file,
+            line))
+    {
         std::istringstream stream(
-            line);
+            line
+        );
 
         std::string key;
         uint64_t value = 0;
 
-        stream >> key >> value;
+        stream
+            >> key
+            >> value;
+
 
         if (key == "MemTotal:")
         {
-
             totalKb = value;
         }
         else if (
             key == "MemAvailable:")
         {
-
             availableKb = value;
         }
 
-        if (totalKb > 0 && availableKb > 0)
-        {
 
+        if (totalKb > 0
+                && availableKb > 0)
+        {
             break;
         }
     }
 
-    if (totalKb == 0 || totalKb < availableKb)
-    {
 
+    if (totalKb == 0
+            || totalKb < availableKb)
+    {
         return 0;
     }
 
+
     return (
-               totalKb - availableKb) *
-           1024;
+        totalKb - availableKb
+    ) * 1024;
 
 #endif
 }
 
+
 CpuTimes readCpuTimes()
 {
-
 #ifdef __APPLE__
 
     host_cpu_load_info_data_t cpuInfo{};
@@ -269,41 +230,60 @@ CpuTimes readCpuTimes()
     mach_msg_type_number_t count =
         HOST_CPU_LOAD_INFO_COUNT;
 
+
     kern_return_t result =
         host_statistics(
             mach_host_self(),
             HOST_CPU_LOAD_INFO,
             reinterpret_cast<
-                host_info_t>(
-                &cpuInfo),
-            &count);
+                host_info_t
+            >(
+                &cpuInfo
+            ),
+            &count
+        );
+
 
     if (result != KERN_SUCCESS)
     {
-
         return {0, 0};
     }
 
+
     const uint64_t user =
-        cpuInfo.cpu_ticks[CPU_STATE_USER];
+        cpuInfo.cpu_ticks[
+            CPU_STATE_USER
+        ];
 
     const uint64_t system =
-        cpuInfo.cpu_ticks[CPU_STATE_SYSTEM];
+        cpuInfo.cpu_ticks[
+            CPU_STATE_SYSTEM
+        ];
 
     const uint64_t idle =
-        cpuInfo.cpu_ticks[CPU_STATE_IDLE];
+        cpuInfo.cpu_ticks[
+            CPU_STATE_IDLE
+        ];
 
     const uint64_t nice =
-        cpuInfo.cpu_ticks[CPU_STATE_NICE];
+        cpuInfo.cpu_ticks[
+            CPU_STATE_NICE
+        ];
+
 
     return {
         idle,
-        user + system + idle + nice};
+        user
+            + system
+            + idle
+            + nice
+    };
 
 #else
 
     std::ifstream file(
-        "/proc/stat");
+        "/proc/stat"
+    );
 
     std::string cpu;
 
@@ -316,63 +296,115 @@ CpuTimes readCpuTimes()
     uint64_t softirq = 0;
     uint64_t steal = 0;
 
-    file >> cpu >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal;
+
+    file
+        >> cpu
+        >> user
+        >> nice
+        >> system
+        >> idle
+        >> iowait
+        >> irq
+        >> softirq
+        >> steal;
+
 
     const uint64_t idleTime =
         idle + iowait;
 
+
     const uint64_t totalTime =
-        user + nice + system + idle + iowait + irq + softirq + steal;
+        user
+        + nice
+        + system
+        + idle
+        + iowait
+        + irq
+        + softirq
+        + steal;
+
 
     return {
         idleTime,
-        totalTime};
+        totalTime
+    };
 
 #endif
 }
 
+
 double calculateCpuUsage(
-    const CpuTimes &previous,
-    const CpuTimes &current)
+    const CpuTimes& previous,
+    const CpuTimes& current)
 {
-
-    if (current.total < previous.total || current.idle < previous.idle)
+    if (current.total < previous.total
+            || current.idle < previous.idle)
     {
-
         return 0.0;
     }
 
+
     const uint64_t totalDelta =
-        current.total - previous.total;
+        current.total
+        - previous.total;
 
     const uint64_t idleDelta =
-        current.idle - previous.idle;
+        current.idle
+        - previous.idle;
+
 
     if (totalDelta == 0)
     {
-
         return 0.0;
     }
 
-    return 100.0 *
-           static_cast<double>(
-               totalDelta - idleDelta) /
-           static_cast<double>(
-               totalDelta);
+
+    return
+        100.0
+        *
+        static_cast<double>(
+            totalDelta - idleDelta
+        )
+        /
+        static_cast<double>(
+            totalDelta
+        );
 }
 
+
 void handleControllerMessage(
-    const forge::v1::ControllerMessage &message,
-    TaskExecutorPool &executorPool)
+    const forge::v1::ControllerMessage& message,
+    TaskExecutorPool& executorPool,
+    ReliableEventSender& eventSender)
 {
+    // ========================================================
+    // ACK for reliable worker event
+    // ========================================================
+
+    if (message.has_event_ack())
+    {
+        eventSender.acknowledge(
+            message
+                .event_ack()
+                .event_id()
+        );
+
+        return;
+    }
+
+
+    // ========================================================
+    // New task assignment
+    // ========================================================
 
     if (message.has_task_assignment())
     {
-
-        const auto &task =
+        const auto& task =
             message.task_assignment();
 
+
         std::cout << "\n";
+
         std::cout
             << "=== TASK RECEIVED ===\n";
 
@@ -402,23 +434,33 @@ void handleControllerMessage(
         std::cout
             << "=====================\n";
 
+
         executorPool.submit(
-            task);
+            task
+        );
 
         return;
     }
 
+
+    // ========================================================
+    // Cancel existing attempt
+    // ========================================================
+
     if (message.has_cancel_task())
     {
-
-        const auto &cancellation =
+        const auto& cancellation =
             message.cancel_task();
+
 
         bool found =
             executorPool.cancel(
-                cancellation.attempt_id());
+                cancellation.attempt_id()
+            );
+
 
         std::cout << "\n";
+
         std::cout
             << "=== CANCEL RECEIVED ===\n";
 
@@ -434,45 +476,51 @@ void handleControllerMessage(
 
         std::cout
             << "Found: "
-            << (found
+            << (
+                found
                     ? "yes"
-                    : "no")
+                    : "no"
+            )
             << "\n";
 
         std::cout
             << "=======================\n";
+
+        return;
     }
 }
 
+
 int main(
     int argc,
-    char *argv[])
+    char* argv[])
 {
-
     std::string controllerAddress =
         "localhost:50051";
+
 
     for (int i = 1;
          i < argc;
          ++i)
     {
-
         std::string argument =
             argv[i];
 
         const std::string prefix =
             "--controller=";
 
+
         if (argument.rfind(
                 prefix,
                 0) == 0)
         {
-
             controllerAddress =
                 argument.substr(
-                    prefix.length());
+                    prefix.length()
+                );
         }
     }
+
 
     const std::string hostname =
         getHostname();
@@ -480,17 +528,20 @@ int main(
     const std::string workerId =
         hostname + "-worker";
 
+
     unsigned int cpuCores =
         std::thread::hardware_concurrency();
 
+
     if (cpuCores == 0)
     {
-
         cpuCores = 1;
     }
 
+
     const uint64_t totalMemoryBytes =
         getTotalMemoryBytes();
+
 
 #ifdef __APPLE__
     const std::string operatingSystem =
@@ -499,6 +550,7 @@ int main(
     const std::string operatingSystem =
         "Linux";
 #endif
+
 
     std::cout
         << "Controller: "
@@ -533,68 +585,109 @@ int main(
         << operatingSystem
         << "\n";
 
+
+    // ========================================================
+    // Shared gRPC channel
+    // ========================================================
+
     auto channel =
         grpc::CreateChannel(
             controllerAddress,
-            grpc::InsecureChannelCredentials());
+            grpc::InsecureChannelCredentials()
+        );
 
-    auto streamState =
+
+    // ========================================================
+    // Reliable outbound worker event queue
+    // ========================================================
+
+    auto eventSender =
         std::make_shared<
-            CommandStreamState>();
+            ReliableEventSender
+        >();
+
+
+    // ========================================================
+    // Executor pool
+    // ========================================================
 
     const std::size_t executorThreads =
         std::max<std::size_t>(
             1,
             std::min<std::size_t>(
                 static_cast<std::size_t>(
-                    cpuCores),
-                4));
+                    cpuCores
+                ),
+                4
+            )
+        );
+
 
     std::cout
         << "Executor threads: "
         << executorThreads
         << "\n";
 
+
     TaskExecutorPool executorPool(
 
         executorThreads,
 
-        /*
-         * Task actually begins execution.
-         */
-        [streamState](
-            const forge::v1::TaskAssignment &task)
+
+        // ====================================================
+        // Task started
+        // ====================================================
+
+        [eventSender](
+            const forge::v1::TaskAssignment& task)
         {
             forge::v1::WorkerMessage message;
 
-            auto *accepted =
+            auto* accepted =
                 message.mutable_task_accepted();
 
+
+            /*
+             * Stable deterministic ID.
+             *
+             * If this event is replayed after a disconnect,
+             * it keeps the same identity.
+             */
+            const std::string eventId =
+                task.attempt_id()
+                + ":accepted";
+
+
             accepted->set_task_id(
-                task.task_id());
+                task.task_id()
+            );
 
             accepted->set_attempt_id(
-                task.attempt_id());
+                task.attempt_id()
+            );
 
-            if (!streamState->send(
-                    message))
-            {
+            accepted->set_event_id(
+                eventId
+            );
 
-                std::cerr
-                    << "Could not send TaskAccepted for "
-                    << task.task_id()
-                    << ": controller disconnected\n";
-            }
+
+            eventSender->enqueue(
+                eventId,
+                std::move(message)
+            );
         },
 
-        /*
-         * Task finishes execution.
-         */
-        [streamState](
-            const forge::v1::TaskAssignment &task,
-            const ProcessResult &result)
+
+        // ====================================================
+        // Task completed
+        // ====================================================
+
+        [eventSender](
+            const forge::v1::TaskAssignment& task,
+            const ProcessResult& result)
         {
             std::cout << "\n";
+
             std::cout
                 << "=== TASK FINISHED ===\n";
 
@@ -608,119 +701,160 @@ int main(
                 << result.exitCode
                 << "\n";
 
+
             if (!result.stdoutOutput.empty())
             {
-
                 std::cout
                     << "stdout:\n"
                     << result.stdoutOutput;
 
                 if (
-                    result.stdoutOutput.back() != '\n')
+                    result.stdoutOutput.back()
+                        != '\n'
+                )
                 {
-
                     std::cout << "\n";
                 }
             }
 
+
             if (!result.stderrOutput.empty())
             {
-
                 std::cout
                     << "stderr:\n"
                     << result.stderrOutput;
 
                 if (
-                    result.stderrOutput.back() != '\n')
+                    result.stderrOutput.back()
+                        != '\n'
+                )
                 {
-
                     std::cout << "\n";
                 }
             }
 
+
             std::cout
                 << "=====================\n";
 
+
             forge::v1::WorkerMessage message;
 
-            auto *taskResult =
+            auto* taskResult =
                 message.mutable_task_result();
 
+
+            /*
+             * Stable deterministic ID for this
+             * physical attempt's final result.
+             */
+            const std::string eventId =
+                task.attempt_id()
+                + ":result";
+
+
             taskResult->set_task_id(
-                task.task_id());
+                task.task_id()
+            );
 
             taskResult->set_attempt_id(
-                task.attempt_id());
+                task.attempt_id()
+            );
 
             taskResult->set_exit_code(
-                result.exitCode);
+                result.exitCode
+            );
 
             taskResult->set_stdout(
-                result.stdoutOutput);
+                result.stdoutOutput
+            );
 
             taskResult->set_stderr(
-                result.stderrOutput);
+                result.stderrOutput
+            );
 
             taskResult->set_success(
-                result.exitCode == 0);
+                result.exitCode == 0
+            );
 
             taskResult->set_cancelled(
-                result.cancelled);
+                result.cancelled
+            );
 
-            if (!streamState->send(
-                    message))
-            {
+            taskResult->set_event_id(
+                eventId
+            );
 
-                std::cerr
-                    << "Could not send TaskResult for "
-                    << task.task_id()
-                    << ": controller disconnected\n";
-            }
-        });
+
+            eventSender->enqueue(
+                eventId,
+                std::move(message)
+            );
+        }
+    );
+
+
+    // ========================================================
+    // Controller connection manager
+    // ========================================================
 
     /*
-     * Connection manager.
+     * Registration and the command stream are ephemeral.
      *
-     * This thread owns registration and the long-lived
-     * controller command stream.
-     *
-     * When either disappears it waits briefly and
-     * performs the entire handshake again.
+     * If the stream disappears, the worker keeps running,
+     * retries registration, creates another stream, and
+     * ReliableEventSender replays anything not yet ACKed.
      */
     std::thread connectionThread(
-        [channel,
-         streamState,
-         workerId,
-         hostname,
-         cpuCores,
-         totalMemoryBytes,
-         operatingSystem,
-         &executorPool]()
+
+        [
+            channel,
+            eventSender,
+            workerId,
+            hostname,
+            cpuCores,
+            totalMemoryBytes,
+            operatingSystem,
+            &executorPool
+        ]()
         {
             while (true)
             {
-
                 auto stub =
-                    forge::v1::ForgeController ::NewStub(
-                        channel);
+                    forge::v1::ForgeController
+                        ::NewStub(
+                            channel
+                        );
+
+
+                // ============================================
+                // Register worker
+                // ============================================
 
                 forge::v1::RegisterWorkerRequest
                     registerRequest;
 
+
                 registerRequest.set_worker_id(
-                    workerId);
+                    workerId
+                );
 
                 registerRequest.set_hostname(
-                    hostname);
+                    hostname
+                );
 
                 registerRequest.set_cpu_cores(
-                    cpuCores);
+                    cpuCores
+                );
 
                 registerRequest.set_memory_bytes(
-                    totalMemoryBytes);
+                    totalMemoryBytes
+                );
 
                 registerRequest.set_operating_system(
-                    operatingSystem);
+                    operatingSystem
+                );
+
 
                 forge::v1::RegisterWorkerResponse
                     registerResponse;
@@ -728,207 +862,300 @@ int main(
                 grpc::ClientContext
                     registerContext;
 
+
                 registerContext.set_deadline(
-                    std::chrono::system_clock::now() +
-                    std::chrono::seconds(3));
+                    std::chrono::system_clock::now()
+                    +
+                    std::chrono::seconds(3)
+                );
+
 
                 grpc::Status registerStatus =
                     stub->RegisterWorker(
                         &registerContext,
                         registerRequest,
-                        &registerResponse);
+                        &registerResponse
+                    );
 
-                if (!registerStatus.ok() || !registerResponse.accepted())
+
+                if (!registerStatus.ok()
+                        || !registerResponse.accepted())
                 {
-
                     std::cerr
                         << "[connection] controller unavailable; "
                         << "retrying in 2 seconds";
 
+
                     if (!registerStatus.ok())
                     {
-
                         std::cerr
                             << ": "
                             << registerStatus
-                                   .error_message();
+                                .error_message();
                     }
+
 
                     std::cerr << "\n";
 
+
                     std::this_thread::sleep_for(
-                        std::chrono::seconds(2));
+                        std::chrono::seconds(2)
+                    );
 
                     continue;
                 }
+
 
                 std::cout
                     << "\nController response:\n"
                     << registerResponse.message()
                     << "\n";
 
+
+                // ============================================
+                // Open command stream
+                // ============================================
+
                 grpc::ClientContext
                     streamContext;
 
+
                 auto streamUnique =
                     stub->ConnectWorker(
-                        &streamContext);
+                        &streamContext
+                    );
+
 
                 if (!streamUnique)
                 {
-
                     std::cerr
                         << "[connection] failed to create "
                         << "command stream\n";
 
+
                     std::this_thread::sleep_for(
-                        std::chrono::seconds(2));
+                        std::chrono::seconds(2)
+                    );
 
                     continue;
                 }
 
+
                 std::shared_ptr<CommandStream>
                     commandStream(
                         std::move(
-                            streamUnique));
+                            streamUnique
+                        )
+                    );
+
+
+                // ============================================
+                // WorkerHello
+                // ============================================
 
                 forge::v1::WorkerMessage
                     helloMessage;
 
-                auto *hello =
+
+                auto* hello =
                     helloMessage.mutable_hello();
 
+
                 hello->set_worker_id(
-                    workerId);
+                    workerId
+                );
 
                 hello->set_hostname(
-                    hostname);
+                    hostname
+                );
 
                 hello->set_cpu_cores(
-                    cpuCores);
+                    cpuCores
+                );
 
                 hello->set_memory_bytes(
-                    totalMemoryBytes);
+                    totalMemoryBytes
+                );
 
                 hello->set_operating_system(
-                    operatingSystem);
+                    operatingSystem
+                );
+
 
                 if (!commandStream->Write(
                         helloMessage))
                 {
-
                     std::cerr
                         << "[connection] failed to send "
                         << "WorkerHello\n";
+
 
                     commandStream->WritesDone();
 
                     commandStream->Finish();
 
+
                     std::this_thread::sleep_for(
-                        std::chrono::seconds(2));
+                        std::chrono::seconds(2)
+                    );
 
                     continue;
                 }
 
-                streamState->set(
-                    commandStream);
+
+                /*
+                 * This makes the stream current and
+                 * automatically replays anything still
+                 * waiting for an ACK.
+                 */
+                eventSender->setStream(
+                    commandStream
+                );
+
 
                 std::cout
-                    << "Command stream connected.\n";
+                    << "Command stream connected."
+                    << " Pending events="
+                    << eventSender->pendingCount()
+                    << "\n";
+
+
+                // ============================================
+                // Read controller commands + event ACKs
+                // ============================================
 
                 forge::v1::ControllerMessage
                     message;
 
-                while (commandStream->Read(
-                    &message))
-                {
 
+                while (commandStream->Read(
+                        &message))
+                {
                     handleControllerMessage(
                         message,
-                        executorPool);
+                        executorPool,
+                        *eventSender
+                    );
                 }
 
-                streamState->clear(
-                    commandStream);
+
+                // ============================================
+                // Stream lost
+                // ============================================
+
+                eventSender->clearStream(
+                    commandStream
+                );
+
 
                 commandStream->WritesDone();
+
 
                 grpc::Status streamStatus =
                     commandStream->Finish();
 
+
                 std::cerr
                     << "Controller command stream closed";
 
+
                 if (!streamStatus.ok())
                 {
-
                     std::cerr
                         << ": "
                         << streamStatus
-                               .error_message();
+                            .error_message();
                 }
 
+
                 std::cerr
-                    << "\n[connection] reconnecting "
-                    << "in 2 seconds\n";
+                    << "\n[connection] "
+                    << eventSender->pendingCount()
+                    << " event(s) pending; "
+                    << "reconnecting in 2 seconds\n";
+
 
                 std::this_thread::sleep_for(
-                    std::chrono::seconds(2));
+                    std::chrono::seconds(2)
+                );
             }
-        });
+        }
+    );
+
 
     connectionThread.detach();
 
+
+    // ========================================================
+    // Heartbeats
+    // ========================================================
+
     /*
-     * Heartbeats use their own stub.
+     * Heartbeats remain ordinary unary RPCs.
      *
-     * The gRPC channel itself can survive transport
-     * loss and reconnect when the controller returns.
+     * They are telemetry rather than durable state changes,
+     * so they do not need the reliable event outbox.
      */
     auto heartbeatStub =
-        forge::v1::ForgeController ::NewStub(
-            channel);
+        forge::v1::ForgeController
+            ::NewStub(
+                channel
+            );
+
 
     CpuTimes previousCpuTimes =
         readCpuTimes();
 
+
     while (true)
     {
-
         std::this_thread::sleep_for(
-            std::chrono::seconds(5));
+            std::chrono::seconds(5)
+        );
+
 
         const CpuTimes currentCpuTimes =
             readCpuTimes();
 
+
         const double cpuUsage =
             calculateCpuUsage(
                 previousCpuTimes,
-                currentCpuTimes);
+                currentCpuTimes
+            );
+
 
         previousCpuTimes =
             currentCpuTimes;
 
+
         const uint64_t memoryUsed =
             getMemoryUsedBytes();
+
 
         forge::v1::HeartbeatRequest
             heartbeat;
 
+
         heartbeat.set_worker_id(
-            workerId);
+            workerId
+        );
 
         heartbeat.set_cpu_usage_percent(
-            cpuUsage);
+            cpuUsage
+        );
 
         heartbeat.set_memory_used_bytes(
-            memoryUsed);
+            memoryUsed
+        );
 
         heartbeat.set_running_tasks(
             static_cast<uint32_t>(
                 executorPool
-                    .runningTaskCount()));
+                    .runningTaskCount()
+            )
+        );
+
 
         forge::v1::HeartbeatResponse
             heartbeatResponse;
@@ -936,23 +1163,33 @@ int main(
         grpc::ClientContext
             heartbeatContext;
 
+
         heartbeatContext.set_deadline(
-            std::chrono::system_clock::now() +
-            std::chrono::seconds(2));
+            std::chrono::system_clock::now()
+            +
+            std::chrono::seconds(2)
+        );
+
 
         grpc::Status heartbeatStatus =
             heartbeatStub->Heartbeat(
                 &heartbeatContext,
                 heartbeat,
-                &heartbeatResponse);
+                &heartbeatResponse
+            );
 
-        if (heartbeatStatus.ok() && heartbeatResponse.accepted())
+
+        if (heartbeatStatus.ok()
+                && heartbeatResponse.accepted())
         {
-
             const double memoryGb =
                 static_cast<double>(
-                    memoryUsed) /
-                1024.0 / 1024.0 / 1024.0;
+                    memoryUsed
+                )
+                / 1024.0
+                / 1024.0
+                / 1024.0;
+
 
             std::cout
                 << std::fixed
@@ -963,33 +1200,36 @@ int main(
                 << memoryGb
                 << " GB TASKS="
                 << executorPool
-                       .runningTaskCount()
+                    .runningTaskCount()
+                << " OUTBOX="
+                << eventSender
+                    ->pendingCount()
                 << "\n";
         }
         else
         {
-
             std::cerr
                 << "[heartbeat] controller unavailable";
 
+
             if (!heartbeatStatus.ok())
             {
-
                 std::cerr
                     << ": "
                     << heartbeatStatus
-                           .error_message();
+                        .error_message();
             }
             else
             {
-
                 std::cerr
                     << ": worker not registered";
             }
 
+
             std::cerr << "\n";
         }
     }
+
 
     return 0;
 }
