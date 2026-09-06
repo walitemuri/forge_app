@@ -4,6 +4,8 @@
 #include <chrono>
 #include <cstdint>
 #include <fstream>
+#include <filesystem>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -601,10 +603,44 @@ int main(
     // Reliable outbound worker event queue
     // ========================================================
 
+    std::filesystem::path outboxRoot;
+
+
+    if (const char* configured =
+            std::getenv("FORGE_OUTBOX_DIR"))
+    {
+        outboxRoot =
+            configured;
+    }
+    else if (const char* home =
+            std::getenv("HOME"))
+    {
+        outboxRoot =
+            std::filesystem::path(home)
+            / ".forge"
+            / "outbox";
+    }
+    else
+    {
+        outboxRoot =
+            std::filesystem::current_path()
+            / ".forge"
+            / "outbox";
+    }
+
+
+    const std::filesystem::path
+        workerOutboxDirectory =
+            outboxRoot
+            / workerId;
+
+
     auto eventSender =
         std::make_shared<
             ReliableEventSender
-        >();
+        >(
+            workerOutboxDirectory
+        );
 
 
     // ========================================================

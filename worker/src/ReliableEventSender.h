@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <deque>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -21,6 +22,11 @@ public:
             forge::v1::WorkerMessage,
             forge::v1::ControllerMessage
         >;
+
+
+    explicit ReliableEventSender(
+        std::filesystem::path storageDirectory
+    );
 
 
     void setStream(
@@ -49,12 +55,46 @@ public:
 
 private:
 
+    void loadPersistedEvents();
+
+
+    bool persistEvent(
+        const std::string& eventId,
+        const forge::v1::WorkerMessage& message
+    );
+
+
+    void removePersistedEvent(
+        const std::string& eventId
+    );
+
+
+    std::filesystem::path eventPath(
+        const std::string& eventId
+    ) const;
+
+
+    static std::string safeFileName(
+        const std::string& eventId
+    );
+
+
+    static std::string extractEventId(
+        const forge::v1::WorkerMessage& message
+    );
+
+
     void sendOne(
         const std::string& eventId
     );
 
 
+    std::filesystem::path
+        storageDirectory_;
+
+
     mutable std::mutex stateMutex_;
+
     std::mutex writeMutex_;
 
 

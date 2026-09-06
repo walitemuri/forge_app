@@ -1,20 +1,430 @@
 #include "ReliableEventSender.h"
 
 #include <algorithm>
+#include <cctype>
+#include <fstream>
 #include <iostream>
+#include <system_error>
 #include <utility>
 #include <vector>
 
 
-void ReliableEventSender::setStream(
-        std::shared_ptr<CommandStream> stream) {
+ReliableEventSender::ReliableEventSender(
+        std::filesystem::path storageDirectory)
+    :
+        storageDirectory_(
+            std::move(storageDirectory)
+        )
+{
+    std::error_code error;
 
-    std::vector<
-        std::pair<
-            std::string,
-            forge::v1::WorkerMessage
-        >
-    > replay;
+    std::filesystem::create_directories(
+        storageDirectory_,
+        error
+    );
+
+
+    if (error)
+    {
+        throw std::runtime_error(
+            "Unable to create worker outbox directory "
+            + storageDirectory_.string()
+            + ": "
+            + error.message()
+        );
+    }
+
+
+    loadPersistedEvents();
+
+
+    std::cout
+        << "[outbox] storage="
+        << storageDirectory_.string()
+        << " pending="
+        << pendingCount()
+        << "\n";
+}
+
+
+void ReliableEventSender::loadPersistedEvents()
+{
+    std::vector<std::filesystem::path>
+        files;
+
+
+    std::error_code error;
+
+
+    for (
+        std::filesystem::directory_iterator iterator(
+            storageDirectory_,
+            error
+        );
+
+        !error
+            && iterator
+                != std::filesystem::
+                    directory_iterator();
+
+        iterator.increment(error)
+    )
+    {
+        if (!iterator->is_regular_file())
+        {
+            continue;
+        }
+
+
+        const auto& path =
+            iterator->path();
+
+
+        if (path.extension()
+                == ".event")
+        {
+            files.push_back(
+                path
+            );
+        }
+    }
+
+
+    if (error)
+    {
+        std::cerr
+            << "[outbox] failed to scan "
+            << storageDirectory_.string()
+            << ": "
+            << error.message()
+            << "\n";
+
+        return;
+    }
+
+
+    /*
+     * Deterministic replay order.
+     *
+     * For one attempt:
+     *
+     *   <uuid>_accepted.event
+     *   <uuid>_result.event
+     *
+     * so TaskAccepted naturally loads before TaskResult.
+     */
+    std::sort(
+        files.begin(),
+        files.end()
+    );
+
+
+    for (const auto& path : files)
+    {
+        std::ifstream input(
+            path,
+            std::ios::binary
+        );
+
+
+        if (!input)
+        {
+            std::cerr
+                << "[outbox] unable to open "
+                << path.string()
+                << "\n";
+
+            continue;
+        }
+
+
+        forge::v1::WorkerMessage
+            message;
+
+
+        if (!message.ParseFromIstream(
+                &input))
+        {
+            std::cerr
+                << "[outbox] corrupt event file "
+                << path.string()
+                << "\n";
+
+            continue;
+        }
+
+
+        const std::string eventId =
+            extractEventId(
+                message
+            );
+
+
+        if (eventId.empty())
+        {
+            std::cerr
+                << "[outbox] persisted message "
+                << "has no reliable event id: "
+                << path.string()
+                << "\n";
+
+            continue;
+        }
+
+
+        if (pending_.contains(
+                eventId))
+        {
+            continue;
+        }
+
+
+        pending_.emplace(
+            eventId,
+            std::move(message)
+        );
+
+
+        order_.push_back(
+            eventId
+        );
+    }
+
+
+    if (!order_.empty())
+    {
+        std::cout
+            << "[outbox] recovered "
+            << order_.size()
+            << " event(s) from disk\n";
+    }
+}
+
+
+bool ReliableEventSender::persistEvent(
+        const std::string& eventId,
+        const forge::v1::WorkerMessage& message)
+{
+    const auto finalPath =
+        eventPath(
+            eventId
+        );
+
+
+    const auto temporaryPath =
+        finalPath.string()
+        + ".tmp";
+
+
+    {
+        std::ofstream output(
+            temporaryPath,
+            std::ios::binary
+            | std::ios::trunc
+        );
+
+
+        if (!output)
+        {
+            std::cerr
+                << "[outbox] unable to create "
+                << temporaryPath
+                << "\n";
+
+            return false;
+        }
+
+
+        if (!message.SerializeToOstream(
+                &output))
+        {
+            std::cerr
+                << "[outbox] unable to serialize "
+                << eventId
+                << "\n";
+
+            return false;
+        }
+
+
+        output.flush();
+
+
+        if (!output)
+        {
+            std::cerr
+                << "[outbox] unable to flush "
+                << temporaryPath
+                << "\n";
+
+            return false;
+        }
+    }
+
+
+    std::error_code error;
+
+
+    /*
+     * Rename makes the event visible to future worker
+     * processes only after the complete protobuf has
+     * been written.
+     */
+    std::filesystem::rename(
+        temporaryPath,
+        finalPath,
+        error
+    );
+
+
+    if (error)
+    {
+        /*
+         * The final file can exist if an earlier copy
+         * of this deterministic event ID was already
+         * persisted.
+         */
+        if (std::filesystem::exists(
+                finalPath))
+        {
+            std::filesystem::remove(
+                temporaryPath,
+                error
+            );
+
+            return true;
+        }
+
+
+        std::cerr
+            << "[outbox] failed to persist "
+            << eventId
+            << ": "
+            << error.message()
+            << "\n";
+
+        return false;
+    }
+
+
+    return true;
+}
+
+
+void ReliableEventSender::removePersistedEvent(
+        const std::string& eventId)
+{
+    std::error_code error;
+
+
+    std::filesystem::remove(
+        eventPath(
+            eventId
+        ),
+        error
+    );
+
+
+    if (error)
+    {
+        /*
+         * This is safe to tolerate.
+         *
+         * If the stale file survives until a future
+         * process restart, Forge will replay it and
+         * the controller's attempt/status guards will
+         * ACK it again.
+         */
+        std::cerr
+            << "[outbox] unable to remove "
+            << eventId
+            << " from disk: "
+            << error.message()
+            << "\n";
+    }
+}
+
+
+std::filesystem::path
+ReliableEventSender::eventPath(
+        const std::string& eventId) const
+{
+    return storageDirectory_
+        / (
+            safeFileName(
+                eventId
+            )
+            + ".event"
+        );
+}
+
+
+std::string ReliableEventSender::safeFileName(
+        const std::string& eventId)
+{
+    std::string result;
+
+    result.reserve(
+        eventId.size()
+    );
+
+
+    for (unsigned char character :
+            eventId)
+    {
+        if (std::isalnum(
+                character)
+                || character == '-'
+                || character == '_'
+                || character == '.')
+        {
+            result.push_back(
+                static_cast<char>(
+                    character
+                )
+            );
+        }
+        else
+        {
+            result.push_back(
+                '_'
+            );
+        }
+    }
+
+
+    return result;
+}
+
+
+std::string ReliableEventSender::extractEventId(
+        const forge::v1::WorkerMessage& message)
+{
+    if (message.has_task_accepted())
+    {
+        return message
+            .task_accepted()
+            .event_id();
+    }
+
+
+    if (message.has_task_result())
+    {
+        return message
+            .task_result()
+            .event_id();
+    }
+
+
+    return {};
+}
+
+
+void ReliableEventSender::setStream(
+        std::shared_ptr<CommandStream> stream)
+{
+    std::vector<std::string>
+        replay;
 
 
     {
@@ -27,33 +437,15 @@ void ReliableEventSender::setStream(
             std::move(stream);
 
 
-        replay.reserve(
-            order_.size()
+        replay.assign(
+            order_.begin(),
+            order_.end()
         );
-
-
-        for (const auto& eventId : order_) {
-
-            auto iterator =
-                pending_.find(
-                    eventId
-                );
-
-
-            if (iterator
-                    != pending_.end()) {
-
-                replay.emplace_back(
-                    eventId,
-                    iterator->second
-                );
-            }
-        }
     }
 
 
-    if (!replay.empty()) {
-
+    if (!replay.empty())
+    {
         std::cout
             << "[outbox] replaying "
             << replay.size()
@@ -61,25 +453,26 @@ void ReliableEventSender::setStream(
     }
 
 
-    for (const auto& event : replay) {
-
+    for (const auto& eventId :
+            replay)
+    {
         sendOne(
-            event.first
+            eventId
         );
     }
 }
 
 
 void ReliableEventSender::clearStream(
-        const std::shared_ptr<CommandStream>& expected) {
-
+        const std::shared_ptr<CommandStream>& expected)
+{
     std::lock_guard<std::mutex> lock(
         stateMutex_
     );
 
 
-    if (stream_ == expected) {
-
+    if (stream_ == expected)
+    {
         stream_.reset();
     }
 }
@@ -87,8 +480,8 @@ void ReliableEventSender::clearStream(
 
 void ReliableEventSender::enqueue(
         const std::string& eventId,
-        forge::v1::WorkerMessage message) {
-
+        forge::v1::WorkerMessage message)
+{
     {
         std::lock_guard<std::mutex> lock(
             stateMutex_
@@ -96,9 +489,29 @@ void ReliableEventSender::enqueue(
 
 
         if (pending_.contains(
-                eventId)) {
-
+                eventId))
+        {
             return;
+        }
+
+
+        /*
+         * Durable-before-visible.
+         *
+         * Do not make the event eligible for sending
+         * until its disk copy exists.
+         */
+        if (!persistEvent(
+                eventId,
+                message))
+        {
+            std::cerr
+                << "[outbox] WARNING: "
+                << "event is being kept only "
+                << "in memory because disk "
+                << "persistence failed: "
+                << eventId
+                << "\n";
         }
 
 
@@ -121,8 +534,8 @@ void ReliableEventSender::enqueue(
 
 
 void ReliableEventSender::acknowledge(
-        const std::string& eventId) {
-
+        const std::string& eventId)
+{
     std::size_t remaining = 0;
 
 
@@ -132,11 +545,25 @@ void ReliableEventSender::acknowledge(
         );
 
 
-        if (pending_.erase(
-                eventId) == 0) {
-
+        if (!pending_.contains(
+                eventId))
+        {
             return;
         }
+
+
+        /*
+         * Controller has durably processed the event,
+         * so the persistent copy can now be removed.
+         */
+        removePersistedEvent(
+            eventId
+        );
+
+
+        pending_.erase(
+            eventId
+        );
 
 
         order_.erase(
@@ -164,8 +591,8 @@ void ReliableEventSender::acknowledge(
 
 
 std::size_t
-ReliableEventSender::pendingCount() const {
-
+ReliableEventSender::pendingCount() const
+{
     std::lock_guard<std::mutex> lock(
         stateMutex_
     );
@@ -176,8 +603,8 @@ ReliableEventSender::pendingCount() const {
 
 
 void ReliableEventSender::sendOne(
-        const std::string& eventId) {
-
+        const std::string& eventId)
+{
     std::shared_ptr<CommandStream>
         stream;
 
@@ -199,8 +626,8 @@ void ReliableEventSender::sendOne(
 
         if (iterator
                 == pending_.end()
-                || !stream_) {
-
+                || !stream_)
+        {
             return;
         }
 
@@ -218,26 +645,22 @@ void ReliableEventSender::sendOne(
     );
 
 
-    /*
-     * Make sure this stream is still current after
-     * waiting for another writer.
-     */
     {
         std::lock_guard<std::mutex> lock(
             stateMutex_
         );
 
 
-        if (stream_ != stream) {
-
+        if (stream_ != stream)
+        {
             return;
         }
     }
 
 
     if (!stream->Write(
-            message)) {
-
+            message))
+    {
         std::cerr
             << "[outbox] send failed for "
             << eventId
