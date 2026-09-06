@@ -56,6 +56,7 @@ public class WorkerController {
 
         return new WorkerResponse(
                 worker.getWorkerId(),
+                worker.getSessionId(),
                 worker.getHostname(),
                 worker.getOperatingSystem(),
                 worker.getCpuCores(),

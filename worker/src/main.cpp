@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <random>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -53,6 +54,30 @@ std::string getHostname()
     }
 
     return "unknown";
+}
+
+
+std::string generateSessionId()
+{
+    std::random_device randomDevice;
+
+    std::mt19937_64 generator(
+        randomDevice()
+    );
+
+
+    std::ostringstream output;
+
+    output
+        << std::hex
+        << std::setfill('0')
+        << std::setw(16)
+        << generator()
+        << std::setw(16)
+        << generator();
+
+
+    return output.str();
 }
 
 
@@ -530,6 +555,15 @@ int main(
     const std::string workerId =
         hostname + "-worker";
 
+    /*
+     * Unique identity for this exact worker process.
+     *
+     * workerId survives process restarts conceptually.
+     * sessionId does not.
+     */
+    const std::string sessionId =
+        generateSessionId();
+
 
     unsigned int cpuCores =
         std::thread::hardware_concurrency();
@@ -570,6 +604,11 @@ int main(
     std::cout
         << "Worker ID: "
         << workerId
+        << "\n";
+
+    std::cout
+        << "Session ID: "
+        << sessionId
         << "\n";
 
     std::cout
@@ -847,6 +886,7 @@ int main(
             channel,
             eventSender,
             workerId,
+            sessionId,
             hostname,
             cpuCores,
             totalMemoryBytes,
@@ -873,6 +913,10 @@ int main(
 
                 registerRequest.set_worker_id(
                     workerId
+                );
+
+                registerRequest.set_session_id(
+                    sessionId
                 );
 
                 registerRequest.set_hostname(
@@ -999,6 +1043,10 @@ int main(
 
                 hello->set_worker_id(
                     workerId
+                );
+
+                hello->set_session_id(
+                    sessionId
                 );
 
                 hello->set_hostname(

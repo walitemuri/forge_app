@@ -39,6 +39,7 @@ message WorkerHello {
   uint32 cpu_cores = 3;
   uint64 memory_bytes = 4;
   string operating_system = 5;
+  string session_id = 6;
 }
 
 message WorkerHeartbeat {
@@ -88,6 +89,7 @@ message RegisterWorkerRequest {
   uint32 cpu_cores = 3;
   uint64 memory_bytes = 4;
   string operating_system = 5;
+  string session_id = 6;
 }
 
 message RegisterWorkerResponse {

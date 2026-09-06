@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class WorkerState {
 
     private final String workerId;
+    private final String sessionId;
     private final String hostname;
     private final int cpuCores;
     private final long memoryBytes;
@@ -40,12 +41,14 @@ public class WorkerState {
 
     public WorkerState(
             String workerId,
+            String sessionId,
             String hostname,
             int cpuCores,
             long memoryBytes,
             String operatingSystem) {
 
         this.workerId = workerId;
+        this.sessionId = sessionId;
         this.hostname = hostname;
         this.cpuCores = cpuCores;
         this.memoryBytes = memoryBytes;
@@ -164,6 +167,21 @@ public class WorkerState {
     public String getWorkerId() {
 
         return workerId;
+    }
+
+
+    public String getSessionId() {
+
+        return sessionId;
+    }
+
+
+    public boolean hasSession(
+            String sessionId) {
+
+        return this.sessionId.equals(
+                sessionId
+        );
     }
 
 

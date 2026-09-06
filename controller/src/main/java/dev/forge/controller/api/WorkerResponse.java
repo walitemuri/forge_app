@@ -3,6 +3,7 @@ package dev.forge.controller.api;
 
 public record WorkerResponse(
         String id,
+        String sessionId,
         String hostname,
         String operatingSystem,
         int cpuCores,

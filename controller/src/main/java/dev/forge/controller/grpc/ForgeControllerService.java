@@ -55,6 +55,7 @@ public class ForgeControllerService
 
         WorkerState worker = new WorkerState(
                 request.getWorkerId(),
+                request.getSessionId(),
                 request.getHostname(),
                 request.getCpuCores(),
                 request.getMemoryBytes(),
@@ -70,6 +71,7 @@ public class ForgeControllerService
         System.out.println();
         System.out.println("=== WORKER REGISTERED ===");
         System.out.println("ID:       " + request.getWorkerId());
+        System.out.println("Session:  " + request.getSessionId());
         System.out.println("Hostname: " + request.getHostname());
         System.out.println("CPU:      " + request.getCpuCores() + " cores");
         System.out.println("Memory:   " + request.getMemoryBytes() + " bytes");
