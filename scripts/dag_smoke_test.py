@@ -988,8 +988,85 @@ def test_workflow_cancellation():
 
 
     print("  PASS")
-    
 
+def get_workflows():
+    return request_json(
+        "GET",
+        WORKFLOW_URL,
+    )
+
+def test_workflow_listing():
+    print(
+        "\n[TEST] workflow history listing"
+    )
+
+    workflow = create_workflow(
+        {
+            "name": "history-test",
+            "tasks": [
+                {
+                    "key": "hello",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'print("HELLO", '
+                            'flush=True)'
+                        ),
+                    ],
+                },
+            ],
+        }
+    )
+
+
+    wait_for_status(
+        workflow["tasks"][0]["taskId"],
+        "SUCCEEDED",
+    )
+
+
+    workflows = get_workflows()
+
+
+    matching = [
+        item
+        for item in workflows
+        if item["id"] == workflow["id"]
+    ]
+
+
+    if len(matching) != 1:
+        raise AssertionError(
+            "Created workflow was not "
+            "found in workflow history"
+        )
+
+
+    summary = matching[0]
+
+
+    if summary["name"] != "history-test":
+        raise AssertionError(
+            "Workflow history name mismatch"
+        )
+
+
+    if summary["status"] != "SUCCEEDED":
+        raise AssertionError(
+            "Workflow history should show "
+            f"SUCCEEDED, got {summary['status']}"
+        )
+
+
+    if summary["taskCount"] != 1:
+        raise AssertionError(
+            "Workflow history should report "
+            "one task"
+        )
+
+
+    print("  PASS")
 # ============================================================
 # Main
 # ============================================================
@@ -1036,6 +1113,7 @@ def main():
         test_workflow_cycle_rejected,
         test_workflow_failure_status,
         test_workflow_cancellation,
+        test_workflow_listing,ez
     ]
 
 

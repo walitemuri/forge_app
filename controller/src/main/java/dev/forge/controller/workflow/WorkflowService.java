@@ -4,6 +4,7 @@ import dev.forge.controller.api.CreateWorkflowRequest;
 import dev.forge.controller.api.WorkflowResponse;
 import dev.forge.controller.api.WorkflowTaskRequest;
 import dev.forge.controller.api.WorkflowTaskResponse;
+import dev.forge.controller.api.WorkflowSummaryResponse;
 
 import dev.forge.controller.task.ForgeTask;
 import dev.forge.controller.task.TaskAttempt;
@@ -364,7 +365,44 @@ public class WorkflowService {
                 workflowId
         );
     }
-
+    @Transactional(readOnly = true)
+    public List<WorkflowSummaryResponse> getWorkflows() {
+    
+        List<ForgeWorkflow> workflows =
+                workflowRepository
+                        .findAllByOrderByCreatedAtDesc();
+    
+    
+        List<WorkflowSummaryResponse> responses =
+                new ArrayList<>();
+    
+    
+        for (ForgeWorkflow workflow :
+                workflows) {
+    
+            List<ForgeTask> tasks =
+                    taskRegistry
+                            .getByWorkflowId(
+                                    workflow.getId()
+                            );
+    
+    
+            responses.add(
+                    new WorkflowSummaryResponse(
+                            workflow.getId(),
+                            workflow.getName(),
+                            workflow.getCreatedAt(),
+                            determineWorkflowStatus(
+                                    tasks
+                            ),
+                            tasks.size()
+                    )
+            );
+        }
+    
+    
+        return responses;
+    }
 
     private WorkflowStatus determineWorkflowStatus(
             List<ForgeTask> tasks) {

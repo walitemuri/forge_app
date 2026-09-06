@@ -1,5 +1,7 @@
 package dev.forge.controller.api;
 
+import java.util.List;
+
 import dev.forge.controller.workflow.WorkflowService;
 
 import org.springframework.http.HttpStatus;
@@ -125,5 +127,14 @@ public class WorkflowController {
                             exception.getMessage()
                     );
         }
+    }
+    @GetMapping
+    public ResponseEntity<List<WorkflowSummaryResponse>>
+            getWorkflows() {
+    
+        return ResponseEntity.ok(
+                workflowService
+                        .getWorkflows()
+        );
     }
 }
