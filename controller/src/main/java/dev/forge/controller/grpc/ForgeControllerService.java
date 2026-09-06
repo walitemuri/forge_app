@@ -4,6 +4,7 @@ import dev.forge.controller.task.ForgeTask;
 import dev.forge.controller.task.TaskAttempt;
 import dev.forge.controller.task.TaskAttemptRegistry;
 import dev.forge.controller.task.TaskRegistry;
+import dev.forge.controller.task.TaskAttemptStatus;
 import dev.forge.proto.ControllerMessage;
 import dev.forge.proto.ForgeControllerGrpc;
 import dev.forge.proto.HeartbeatRequest;
@@ -228,6 +229,18 @@ public class ForgeControllerService
                         );
                         return;
                     }
+                    if (attempt.getStatus()
+                            != TaskAttemptStatus.DISPATCHED) {
+
+                        System.err.println(
+                                "Ignoring TaskAccepted for non-dispatched attempt: "
+                                        + attemptId
+                                        + " status="
+                                        + attempt.getStatus()
+                        );
+
+                        return;
+                    }
 
                     attempt.markRunning();
                     taskAttemptRegistry.save(attempt);
@@ -282,6 +295,20 @@ public class ForgeControllerService
                     }
 
                     WorkerState worker = WorkerRegistry.get(attempt.getWorkerId());
+                    if (attempt.getStatus()
+                            != TaskAttemptStatus.DISPATCHED
+                            && attempt.getStatus()
+                            != TaskAttemptStatus.RUNNING) {
+
+                        System.err.println(
+                                "Ignoring TaskResult for terminal attempt: "
+                                        + attemptId
+                                        + " status="
+                                        + attempt.getStatus()
+                        );
+
+                        return;
+                    }
                     if (worker != null) {
                         worker.releaseTask();
                     }
