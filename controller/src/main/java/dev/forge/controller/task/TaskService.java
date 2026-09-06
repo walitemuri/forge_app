@@ -577,7 +577,6 @@ public ForgeTask submitTask(
                         nextAttemptNumber
                 );
 
-
                 return true;
         }
         catch (IllegalStateException exception) {

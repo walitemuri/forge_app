@@ -5,11 +5,14 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import time
 
 
 BASE_URL = "http://localhost:8080/api/tasks"
 WORKFLOW_URL = "http://localhost:8080/api/workflows"
-
+WORKER_URL = (
+    "http://localhost:8080/api/workers"
+)
 POLL_INTERVAL = 0.25
 DEFAULT_TIMEOUT = 30
 
@@ -17,7 +20,12 @@ DEFAULT_TIMEOUT = 30
 # ============================================================
 # HTTP helpers
 # ============================================================
-
+def get_workers():
+    return request_json(
+        "GET",
+        WORKER_URL,
+    )
+    
 def request_json(method, url, body=None):
     data = None
 
@@ -64,6 +72,46 @@ def request_json(method, url, body=None):
 # ============================================================
 # Task helpers
 # ============================================================
+def wait_for_worker_condition(
+        worker_id,
+        predicate,
+        description,
+        timeout=15):
+
+    deadline = (
+        time.time()
+        + timeout
+    )
+
+
+    while time.time() < deadline:
+
+        workers = get_workers()
+
+
+        worker = next(
+            (
+                worker
+                for worker in workers
+                if worker["id"] == worker_id
+            ),
+            None,
+        )
+
+
+        if worker is not None \
+                and predicate(worker):
+
+            return worker
+
+
+        time.sleep(0.25)
+
+
+    raise AssertionError(
+        "Timed out waiting for worker "
+        f"{worker_id}: {description}"
+    )
 
 def create_task(
         command,
@@ -192,6 +240,11 @@ def get_workflow(workflow_id):
         f"{WORKFLOW_URL}/{workflow_id}",
     )
 
+def retry_workflow(workflow_id):
+    return request_json(
+        "POST",
+        f"{WORKFLOW_URL}/{workflow_id}/retry",
+    )
 
 # ============================================================
 # Tests
@@ -1067,6 +1120,746 @@ def test_workflow_listing():
 
 
     print("  PASS")
+
+def test_workflow_retry():
+    print(
+        "\n[TEST] workflow retry after cancellation"
+    )
+
+
+    workflow = create_workflow(
+        {
+            "name": "retry-workflow",
+            "tasks": [
+                {
+                    "key": "root",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'import time; '
+                            'print("ROOT START", '
+                            'flush=True); '
+                            'time.sleep(3); '
+                            'print("ROOT DONE", '
+                            'flush=True)'
+                        ),
+                    ],
+                    "timeoutSeconds": 30,
+                },
+                {
+                    "key": "child",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'print("CHILD DONE", '
+                            'flush=True)'
+                        ),
+                    ],
+                    "dependsOn": [
+                        "root",
+                    ],
+                },
+            ],
+        }
+    )
+
+
+    tasks = {
+        task["key"]: task
+        for task in workflow["tasks"]
+    }
+
+
+    root_id = (
+        tasks["root"]["taskId"]
+    )
+
+    child_id = (
+        tasks["child"]["taskId"]
+    )
+
+
+    wait_for_status(
+        root_id,
+        "RUNNING",
+    )
+
+
+    assert_status(
+        child_id,
+        "BLOCKED",
+    )
+
+
+    cancel_workflow(
+        workflow["id"]
+    )
+
+
+    wait_for_status(
+        root_id,
+        "CANCELLED",
+    )
+
+
+    wait_for_status(
+        child_id,
+        "CANCELLED",
+    )
+
+
+    retry_response = retry_workflow(
+        workflow["id"]
+    )
+
+
+    retry_tasks = {
+        task["key"]: task
+        for task in retry_response["tasks"]
+    }
+
+
+    if retry_tasks["root"]["status"] != "PENDING":
+        raise AssertionError(
+            "Retry root should be PENDING, "
+            f"got {retry_tasks['root']['status']}"
+        )
+
+
+    if retry_tasks["child"]["status"] != "BLOCKED":
+        raise AssertionError(
+            "Retry child should be BLOCKED, "
+            f"got {retry_tasks['child']['status']}"
+        )
+
+
+    wait_for_status(
+        root_id,
+        "SUCCEEDED",
+    )
+
+
+    wait_for_status(
+        child_id,
+        "SUCCEEDED",
+    )
+
+
+    root_attempts = get_attempts(
+        root_id
+    )
+
+
+    if len(root_attempts) != 2:
+        raise AssertionError(
+            "Root should have exactly "
+            f"2 attempts, got "
+            f"{len(root_attempts)}"
+        )
+
+
+    attempt_numbers = [
+        attempt["attemptNumber"]
+        for attempt in root_attempts
+    ]
+
+
+    if attempt_numbers != [1, 2]:
+        raise AssertionError(
+            "Expected root attempts "
+            f"[1, 2], got "
+            f"{attempt_numbers}"
+        )
+
+
+    child_attempts = get_attempts(
+        child_id
+    )
+
+
+    if len(child_attempts) != 1:
+        raise AssertionError(
+            "Child should execute exactly once, "
+            f"got {len(child_attempts)} attempts"
+        )
+
+
+    persisted = get_workflow(
+        workflow["id"]
+    )
+
+
+    if persisted["status"] != "SUCCEEDED":
+        raise AssertionError(
+            "Retried workflow should "
+            "be SUCCEEDED, got "
+            f"{persisted['status']}"
+        )
+
+
+    print("  PASS")
+    
+def test_workflow_selective_retry():
+    print(
+        "\n[TEST] workflow selective retry "
+        "preserves successful tasks"
+    )
+
+
+    workflow = create_workflow(
+        {
+            "name": "selective-retry-workflow",
+            "tasks": [
+                {
+                    "key": "prepare",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'import time; '
+                            'print("PREPARE", flush=True); '
+                            'time.sleep(1)'
+                        ),
+                    ],
+                },
+                {
+                    "key": "build",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'import time; '
+                            'print("BUILD START", flush=True); '
+                            'time.sleep(20); '
+                            'print("BUILD DONE", flush=True)'
+                        ),
+                    ],
+                    "timeoutSeconds": 30,
+                    "dependsOn": [
+                        "prepare",
+                    ],
+                },
+                {
+                    "key": "package",
+                    "command": "python3",
+                    "arguments": [
+                        "-c",
+                        (
+                            'print("PACKAGE", '
+                            'flush=True)'
+                        ),
+                    ],
+                    "dependsOn": [
+                        "build",
+                    ],
+                },
+            ],
+        }
+    )
+
+
+    tasks = {
+        task["key"]: task
+        for task in workflow["tasks"]
+    }
+
+
+    prepare_id = (
+        tasks["prepare"]["taskId"]
+    )
+
+    build_id = (
+        tasks["build"]["taskId"]
+    )
+
+    package_id = (
+        tasks["package"]["taskId"]
+    )
+
+
+    # --------------------------------------------------------
+    # Let the successful upstream task finish.
+    # --------------------------------------------------------
+
+    wait_for_status(
+        prepare_id,
+        "SUCCEEDED",
+    )
+
+
+    wait_for_status(
+        build_id,
+        "RUNNING",
+    )
+
+
+    assert_status(
+        package_id,
+        "BLOCKED",
+    )
+
+
+    prepare_attempts_before = (
+        get_attempts(
+            prepare_id
+        )
+    )
+
+
+    if len(prepare_attempts_before) != 1:
+        raise AssertionError(
+            "prepare should have exactly "
+            "one attempt before retry"
+        )
+
+
+    # --------------------------------------------------------
+    # Cancel while the middle node is running.
+    #
+    # prepare:
+    #     already SUCCEEDED
+    #
+    # build:
+    #     RUNNING -> CANCELLED
+    #
+    # package:
+    #     BLOCKED -> CANCELLED
+    # --------------------------------------------------------
+
+    cancel_workflow(
+        workflow["id"]
+    )
+
+
+    wait_for_status(
+        build_id,
+        "CANCELLED",
+    )
+
+
+    wait_for_status(
+        package_id,
+        "CANCELLED",
+    )
+
+
+    assert_status(
+        prepare_id,
+        "SUCCEEDED",
+    )
+
+
+    # --------------------------------------------------------
+    # Retry the workflow.
+    #
+    # prepare must remain untouched.
+    #
+    # build + package should be reopened.
+    # --------------------------------------------------------
+
+    retry_response = retry_workflow(
+        workflow["id"]
+    )
+
+
+    retry_tasks = {
+        task["key"]: task
+        for task in retry_response["tasks"]
+    }
+
+
+    if retry_tasks["prepare"]["status"] != \
+            "SUCCEEDED":
+
+        raise AssertionError(
+            "Successful prepare task "
+            "should remain SUCCEEDED"
+        )
+
+
+    if retry_tasks["build"]["status"] != \
+            "BLOCKED":
+
+        raise AssertionError(
+            "build should initially be "
+            "BLOCKED after retry because "
+            "it has a dependency"
+        )
+
+
+    if retry_tasks["package"]["status"] != \
+            "BLOCKED":
+
+        raise AssertionError(
+            "package should initially "
+            "be BLOCKED after retry"
+        )
+
+
+    # --------------------------------------------------------
+    # DependencyCoordinator should notice that prepare
+    # already succeeded and release build.
+    # --------------------------------------------------------
+
+    wait_for_status(
+        build_id,
+        "SUCCEEDED",
+    )
+
+
+    wait_for_status(
+        package_id,
+        "SUCCEEDED",
+    )
+
+
+    # --------------------------------------------------------
+    # The successful upstream task must NOT run again.
+    # --------------------------------------------------------
+
+    prepare_attempts_after = (
+        get_attempts(
+            prepare_id
+        )
+    )
+
+
+    if len(prepare_attempts_after) != 1:
+        raise AssertionError(
+            "prepare was incorrectly rerun; "
+            f"expected 1 attempt, got "
+            f"{len(prepare_attempts_after)}"
+        )
+
+
+    # --------------------------------------------------------
+    # build ran once before cancellation and once after retry.
+    # --------------------------------------------------------
+
+    build_attempts = (
+        get_attempts(
+            build_id
+        )
+    )
+
+
+    if len(build_attempts) != 2:
+        raise AssertionError(
+            "build should have exactly "
+            f"2 attempts, got "
+            f"{len(build_attempts)}"
+        )
+
+
+    build_attempt_numbers = [
+        attempt["attemptNumber"]
+        for attempt in build_attempts
+    ]
+
+
+    if build_attempt_numbers != [1, 2]:
+        raise AssertionError(
+            "Expected build attempt numbers "
+            f"[1, 2], got "
+            f"{build_attempt_numbers}"
+        )
+
+
+    # --------------------------------------------------------
+    # package was cancelled while BLOCKED.
+    #
+    # Therefore it never had an original physical attempt.
+    # It should execute exactly once after retry.
+    # --------------------------------------------------------
+
+    package_attempts = (
+        get_attempts(
+            package_id
+        )
+    )
+
+
+    if len(package_attempts) != 1:
+        raise AssertionError(
+            "package should execute exactly "
+            f"once, got "
+            f"{len(package_attempts)} attempts"
+        )
+
+
+    persisted = get_workflow(
+        workflow["id"]
+    )
+
+
+    if persisted["status"] != "SUCCEEDED":
+        raise AssertionError(
+            "Selective retry workflow should "
+            "finish SUCCEEDED, got "
+            f"{persisted['status']}"
+        )
+
+
+    print("  PASS")
+
+def test_worker_listing():
+    print(
+        "\n[TEST] worker monitoring API"
+    )
+
+
+    workers = get_workers()
+
+
+    if not workers:
+        raise AssertionError(
+            "Expected at least one "
+            "connected Forge worker"
+        )
+
+
+    online_workers = [
+        worker
+        for worker in workers
+        if worker["online"]
+    ]
+
+
+    if not online_workers:
+        raise AssertionError(
+            "Expected at least one "
+            "online Forge worker"
+        )
+
+
+    connected_workers = [
+        worker
+        for worker in online_workers
+        if worker[
+            "commandStreamConnected"
+        ]
+    ]
+
+
+    if not connected_workers:
+        raise AssertionError(
+            "Expected at least one worker "
+            "with a command stream"
+        )
+
+
+    for worker in connected_workers:
+
+        if worker["cpuCores"] < 1:
+            raise AssertionError(
+                "Worker reported invalid "
+                "CPU core count"
+            )
+
+
+        if worker["memoryBytes"] <= 0:
+            raise AssertionError(
+                "Worker reported invalid "
+                "memory size"
+            )
+
+
+        if worker["capacity"] < 1:
+            raise AssertionError(
+                "Worker reported invalid "
+                "task capacity"
+            )
+
+
+        if worker["runningTasks"] < 0:
+            raise AssertionError(
+                "Worker reported negative "
+                "running task count"
+            )
+
+
+        if worker["outstandingTasks"] < 0:
+            raise AssertionError(
+                "Worker reported negative "
+                "outstanding task count"
+            )
+
+
+        if worker["lastHeartbeat"] <= 0:
+            raise AssertionError(
+                "Worker has invalid "
+                "heartbeat timestamp"
+            )
+
+
+    print(
+        "  workers:",
+        len(workers),
+    )
+
+    print(
+        "  online:",
+        len(online_workers),
+    )
+
+    print("  PASS")
+    
+def test_worker_live_load():
+    print(
+        "\n[TEST] worker live load monitoring"
+    )
+
+
+    task = create_task(
+        command="python3",
+        arguments=[
+            "-c",
+            (
+                'import time; '
+                'print("LOAD TEST START", '
+                'flush=True); '
+                'time.sleep(8); '
+                'print("LOAD TEST DONE", '
+                'flush=True)'
+            ),
+        ],
+        timeout_seconds=20,
+    )
+
+
+    task_id = (
+        task["id"]
+    )
+
+
+    wait_for_status(
+        task_id,
+        "RUNNING",
+    )
+
+
+    running_task = get_task(
+        task_id
+    )
+
+
+    worker_id = (
+        running_task["workerId"]
+    )
+
+
+    if not worker_id:
+        raise AssertionError(
+            "RUNNING task should have "
+            "an assigned worker"
+        )
+
+
+    # Controller-side reservation should already
+    # reflect the task.
+    busy_worker = (
+        wait_for_worker_condition(
+            worker_id,
+            lambda worker:
+                worker[
+                    "outstandingTasks"
+                ] >= 1,
+            "outstandingTasks >= 1",
+            timeout=5,
+        )
+    )
+
+
+    if not busy_worker["online"]:
+        raise AssertionError(
+            "Executing worker should "
+            "still be online"
+        )
+
+
+    # runningTasks comes from worker heartbeats,
+    # which currently arrive every 5 seconds.
+    heartbeat_busy_worker = (
+        wait_for_worker_condition(
+            worker_id,
+            lambda worker:
+                worker[
+                    "runningTasks"
+                ] >= 1,
+            "runningTasks >= 1",
+            timeout=10,
+        )
+    )
+
+
+    print(
+        "  busy worker:",
+        worker_id,
+    )
+
+    print(
+        "  running:",
+        heartbeat_busy_worker[
+            "runningTasks"
+        ],
+    )
+
+    print(
+        "  outstanding:",
+        heartbeat_busy_worker[
+            "outstandingTasks"
+        ],
+    )
+
+
+    wait_for_status(
+        task_id,
+        "SUCCEEDED",
+    )
+
+
+    # The controller releases its reservation
+    # immediately when TaskResult arrives.
+    wait_for_worker_condition(
+        worker_id,
+        lambda worker:
+            worker[
+                "outstandingTasks"
+            ] == 0,
+        "outstandingTasks == 0",
+        timeout=5,
+    )
+
+
+    # Worker heartbeat may still contain the previous
+    # running count for a few seconds.
+    idle_worker = (
+        wait_for_worker_condition(
+            worker_id,
+            lambda worker:
+                worker[
+                    "runningTasks"
+                ] == 0,
+            "runningTasks == 0",
+            timeout=10,
+        )
+    )
+
+
+    if idle_worker[
+            "outstandingTasks"
+    ] != 0:
+
+        raise AssertionError(
+            "Worker reservation should "
+            "be released after completion"
+        )
+
+
+    print("  PASS")
+
 # ============================================================
 # Main
 # ============================================================
@@ -1113,7 +1906,11 @@ def main():
         test_workflow_cycle_rejected,
         test_workflow_failure_status,
         test_workflow_cancellation,
-        test_workflow_listing,ez
+        test_workflow_listing,
+        test_workflow_retry,
+        test_workflow_selective_retry,
+        test_worker_listing,
+        test_worker_live_load,
     ]
 
 
