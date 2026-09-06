@@ -235,6 +235,15 @@ public class WorkerState {
     }
 
 
+    public void refreshRegistration() {
+
+        this.lastHeartbeat =
+                System.currentTimeMillis();
+
+        this.online = true;
+    }
+
+
     public void setOnline(
             boolean online) {
 

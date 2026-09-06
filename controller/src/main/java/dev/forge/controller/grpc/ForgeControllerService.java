@@ -18,6 +18,7 @@ import dev.forge.proto.RegisterWorkerResponse;
 import dev.forge.proto.WorkerEventAck;
 import dev.forge.proto.WorkerMessage;
 
+import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 
 import org.springframework.stereotype.Component;
@@ -52,6 +53,125 @@ public class ForgeControllerService
     public void registerWorker(
             RegisterWorkerRequest request,
             StreamObserver<RegisterWorkerResponse> responseObserver) {
+
+        WorkerState existing =
+                WorkerRegistry.get(
+                        request.getWorkerId()
+                );
+
+
+        /*
+         * Same worker process reconnecting.
+         *
+         * Preserve reservations and current state instead of
+         * replacing WorkerState with a fresh object.
+         */
+        if (existing != null
+                && existing.hasSession(
+                        request.getSessionId()
+                )) {
+
+            existing.refreshRegistration();
+
+
+            RegisterWorkerResponse response =
+                    RegisterWorkerResponse
+                            .newBuilder()
+                            .setAccepted(true)
+                            .setMessage(
+                                    "Worker session re-registered successfully"
+                            )
+                            .build();
+
+
+            responseObserver.onNext(
+                    response
+            );
+
+            responseObserver.onCompleted();
+
+            return;
+        }
+
+
+        /*
+         * Another process is already actively controlling this
+         * stable worker ID.
+         *
+         * Do NOT let a second process steal ownership while the
+         * first still has a live command stream.
+         */
+        if (existing != null
+                && existing.isOnline()
+                && existing.hasCommandStream()) {
+
+            System.err.println(
+                    "FENCED duplicate worker registration: worker="
+                            + request.getWorkerId()
+                            + " activeSession="
+                            + existing.getSessionId()
+                            + " rejectedSession="
+                            + request.getSessionId()
+            );
+
+
+            RegisterWorkerResponse response =
+                    RegisterWorkerResponse
+                            .newBuilder()
+                            .setAccepted(false)
+                            .setMessage(
+                                    "Worker ID is already owned by an active session"
+                            )
+                            .build();
+
+
+            responseObserver.onNext(
+                    response
+            );
+
+            responseObserver.onCompleted();
+
+            return;
+        }
+
+
+        /*
+         * Different session, but the previous incarnation no
+         * longer owns a live command stream.
+         *
+         * IMPORTANT:
+         *
+         * Do NOT mark its attempts LOST here.
+         *
+         * The replacement process may have loaded a durable
+         * TaskAccepted/TaskResult from the previous process's
+         * disk outbox. It must get a chance to replay that event
+         * before Forge decides the old execution is lost.
+         *
+         * Session-specific attempt ownership will be added in
+         * the next step.
+         */
+        if (existing != null) {
+
+            System.out.println(
+                    "Worker session takeover: worker="
+                            + request.getWorkerId()
+                            + " oldSession="
+                            + existing.getSessionId()
+                            + " newSession="
+                            + request.getSessionId()
+            );
+
+
+            existing.setOnline(
+                    false
+            );
+
+            existing.setCommandStream(
+                    null
+            );
+        }
+
 
         WorkerState worker = new WorkerState(
                 request.getWorkerId(),
@@ -113,7 +233,23 @@ public class ForgeControllerService
                 );
 
 
-        if (worker == null) {
+        if (worker == null
+                || !worker.hasSession(
+                        request.getSessionId()
+                )) {
+
+            if (worker != null) {
+
+                System.err.println(
+                        "Ignoring heartbeat from stale session: worker="
+                                + request.getWorkerId()
+                                + " activeSession="
+                                + worker.getSessionId()
+                                + " staleSession="
+                                + request.getSessionId()
+                );
+            }
+
 
             responseObserver.onNext(
                     HeartbeatResponse
@@ -186,6 +322,8 @@ public class ForgeControllerService
         return new StreamObserver<>() {
 
             private String connectedWorkerId;
+            private String connectedSessionId;
+            private boolean fenced;
 
 
             /*
@@ -267,6 +405,56 @@ public class ForgeControllerService
             public void onNext(
                     WorkerMessage message) {
 
+                if (fenced) {
+
+                    return;
+                }
+
+
+                /*
+                 * Once Hello has established identity, verify on
+                 * every subsequent message that this stream still
+                 * belongs to the authoritative session.
+                 */
+                if (!message.hasHello()
+                        && connectedWorkerId != null) {
+
+                    WorkerState current =
+                            WorkerRegistry.get(
+                                    connectedWorkerId
+                            );
+
+
+                    if (current == null
+                            || !current.hasSession(
+                                    connectedSessionId
+                            )) {
+
+                        fenced =
+                                true;
+
+
+                        System.err.println(
+                                "FENCED stale worker stream message: worker="
+                                        + connectedWorkerId
+                                        + " session="
+                                        + connectedSessionId
+                        );
+
+
+                        responseObserver.onError(
+                                Status.FAILED_PRECONDITION
+                                        .withDescription(
+                                                "Worker session is no longer authoritative"
+                                        )
+                                        .asRuntimeException()
+                        );
+
+                        return;
+                    }
+                }
+
+
                 // =================================================
                 // WorkerHello
                 // =================================================
@@ -278,6 +466,11 @@ public class ForgeControllerService
                                     .getHello()
                                     .getWorkerId();
 
+                    connectedSessionId =
+                            message
+                                    .getHello()
+                                    .getSessionId();
+
 
                     WorkerState worker =
                             WorkerRegistry.get(
@@ -285,11 +478,29 @@ public class ForgeControllerService
                             );
 
 
-                    if (worker == null) {
+                    if (worker == null
+                            || !worker.hasSession(
+                                    connectedSessionId
+                            )) {
+
+                        fenced =
+                                true;
+
 
                         System.err.println(
-                                "Unknown worker attempted stream connection: "
+                                "FENCED stale command stream: worker="
                                         + connectedWorkerId
+                                        + " session="
+                                        + connectedSessionId
+                        );
+
+
+                        responseObserver.onError(
+                                Status.FAILED_PRECONDITION
+                                        .withDescription(
+                                                "Stale worker session"
+                                        )
+                                        .asRuntimeException()
                         );
 
                         return;
@@ -331,6 +542,11 @@ public class ForgeControllerService
                             message
                                     .getTaskAccepted()
                                     .getEventId();
+
+                    String eventSessionId =
+                            message
+                                    .getTaskAccepted()
+                                    .getSessionId();
 
 
                     ForgeTask task =
@@ -457,6 +673,45 @@ public class ForgeControllerService
 
 
                     /*
+                     * New attempts are owned by both a stable
+                     * worker ID and the exact worker process
+                     * session that received the assignment.
+                     *
+                     * A replacement worker session may RELAY an
+                     * event recovered from the old process's
+                     * durable outbox, but the event itself must
+                     * still identify the owning session.
+                     *
+                     * Null ownership is allowed only for legacy
+                     * pre-V16 attempts.
+                     */
+                    if (attempt.getWorkerSessionId() != null
+                            && !attempt.getWorkerSessionId().isBlank()
+                            && !attempt.getWorkerSessionId()
+                                    .equals(eventSessionId)) {
+
+                        System.err.println(
+                                "Ignoring TaskAccepted from wrong session: task="
+                                        + taskId
+                                        + " attempt="
+                                        + attemptId
+                                        + " expectedSession="
+                                        + attempt.getWorkerSessionId()
+                                        + " eventSession="
+                                        + eventSessionId
+                                        + " relaySession="
+                                        + connectedSessionId
+                        );
+
+                        acknowledgeEvent(
+                                eventId
+                        );
+
+                        return;
+                    }
+
+
+                    /*
                      * Duplicate replay:
                      *
                      * The first copy may have already changed the
@@ -562,6 +817,9 @@ public class ForgeControllerService
                     String eventId =
                             result.getEventId();
 
+                    String eventSessionId =
+                            result.getSessionId();
+
 
                     ForgeTask task =
                             taskRegistry.get(
@@ -666,6 +924,33 @@ public class ForgeControllerService
                                         + attempt.getWorkerId()
                                         + " actualWorker="
                                         + connectedWorkerId
+                        );
+
+
+                        acknowledgeEvent(
+                                eventId
+                        );
+
+                        return;
+                    }
+
+
+                    if (attempt.getWorkerSessionId() != null
+                            && !attempt.getWorkerSessionId().isBlank()
+                            && !attempt.getWorkerSessionId()
+                                    .equals(eventSessionId)) {
+
+                        System.err.println(
+                                "Ignoring TaskResult from wrong session: task="
+                                        + taskId
+                                        + " attempt="
+                                        + attemptId
+                                        + " expectedSession="
+                                        + attempt.getWorkerSessionId()
+                                        + " eventSession="
+                                        + eventSessionId
+                                        + " relaySession="
+                                        + connectedSessionId
                         );
 
 

@@ -32,6 +32,9 @@ public class TaskAttempt {
     @Column(name = "worker_id")
     private String workerId;
 
+    @Column(name = "worker_session_id")
+    private String workerSessionId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private TaskAttemptStatus status;
@@ -107,6 +110,10 @@ public class TaskAttempt {
         return workerId;
     }
 
+    public String getWorkerSessionId() {
+        return workerSessionId;
+    }
+
     public TaskAttemptStatus getStatus() {
         return status;
     }
@@ -137,10 +144,14 @@ public class TaskAttempt {
 
 
     public void markDispatched(
-            String workerId) {
+            String workerId,
+            String workerSessionId) {
 
         this.workerId =
                 workerId;
+
+        this.workerSessionId =
+                workerSessionId;
 
         this.status =
                 TaskAttemptStatus.DISPATCHED;

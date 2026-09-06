@@ -471,7 +471,8 @@ public class TaskService {
 
 
         attempt.markDispatched(
-                worker.getWorkerId()
+                worker.getWorkerId(),
+                worker.getSessionId()
         );
 
         attempt =

@@ -713,7 +713,7 @@ int main(
         // Task started
         // ====================================================
 
-        [eventSender](
+        [eventSender, sessionId](
             const forge::v1::TaskAssignment& task)
         {
             forge::v1::WorkerMessage message;
@@ -745,6 +745,10 @@ int main(
                 eventId
             );
 
+            accepted->set_session_id(
+                sessionId
+            );
+
 
             eventSender->enqueue(
                 eventId,
@@ -757,7 +761,7 @@ int main(
         // Task completed
         // ====================================================
 
-        [eventSender](
+        [eventSender, sessionId](
             const forge::v1::TaskAssignment& task,
             const ProcessResult& result)
         {
@@ -858,6 +862,10 @@ int main(
 
             taskResult->set_event_id(
                 eventId
+            );
+
+            taskResult->set_session_id(
+                sessionId
             );
 
 
@@ -962,7 +970,7 @@ int main(
                         || !registerResponse.accepted())
                 {
                     std::cerr
-                        << "[connection] controller unavailable; "
+                        << "[connection] registration failed; "
                         << "retrying in 2 seconds";
 
 
@@ -1223,6 +1231,10 @@ int main(
 
         heartbeat.set_worker_id(
             workerId
+        );
+
+        heartbeat.set_session_id(
+            sessionId
         );
 
         heartbeat.set_cpu_usage_percent(

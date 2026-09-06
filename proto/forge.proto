@@ -66,6 +66,7 @@ message TaskAccepted {
   string task_id = 1;
   string attempt_id = 2;
   string event_id = 3;
+  string session_id = 4;
 }
 
 message TaskResult {
@@ -77,6 +78,7 @@ message TaskResult {
   string attempt_id = 6;
   bool cancelled = 7;
   string event_id = 8;
+  string session_id = 9;
 }
 
 message WorkerEventAck {
@@ -102,6 +104,7 @@ message HeartbeatRequest {
   double cpu_usage_percent = 2;
   uint64 memory_used_bytes = 3;
   uint32 running_tasks = 4;
+  string session_id = 5;
 }
 
 message HeartbeatResponse {
