@@ -3,6 +3,7 @@
 build/
 out/
 *.class
+controller/bin/
 
 # C++
 worker/build/
@@ -17,4 +18,3 @@ worker/build/
 
 # Logs
 *.log
-.fakecontroller/src/main/java/dev/forge/controller/task/oracleJdk-26/
