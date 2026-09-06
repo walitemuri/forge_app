@@ -15,4 +15,8 @@ public interface ForgeWorkflowRepository
     boolean existsByIdAndCancelRequestedTrue(
             String id
     );
+
+
+    List<ForgeWorkflow>
+    findAllByCancelRequestedTrue();
 }

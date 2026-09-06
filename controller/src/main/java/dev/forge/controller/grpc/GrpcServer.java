@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 
+import dev.forge.controller.workflow.WorkflowCancellationRecoveryService;
 
 @Component
 public class GrpcServer {
@@ -22,6 +23,9 @@ public class GrpcServer {
 
     private final TaskRecoveryService
             taskRecoveryService;
+    
+    private final WorkflowCancellationRecoveryService
+        workflowCancellationRecoveryService;
 
     private final int port;
 
@@ -31,6 +35,8 @@ public class GrpcServer {
     public GrpcServer(
             ForgeControllerService forgeControllerService,
             TaskRecoveryService taskRecoveryService,
+            WorkflowCancellationRecoveryService
+                    workflowCancellationRecoveryService,
             @Value("${forge.grpc.port:50051}") int port) {
 
         this.forgeControllerService =
@@ -38,6 +44,9 @@ public class GrpcServer {
 
         this.taskRecoveryService =
                 taskRecoveryService;
+
+        this.workflowCancellationRecoveryService =
+                workflowCancellationRecoveryService;
 
         this.port =
                 port;
@@ -54,7 +63,15 @@ public class GrpcServer {
         taskRecoveryService
                 .recoverInterruptedTasks();
 
-
+/*
+        * Resolve workflows whose durable cancellation
+        * intent survived a previous controller crash.
+        *
+        * This deliberately runs AFTER task recovery so
+        * interrupted executions have already become LOST.
+        */
+        workflowCancellationRecoveryService
+        .recoverCancelledWorkflows();
         server =
                 ServerBuilder
                         .forPort(port)
