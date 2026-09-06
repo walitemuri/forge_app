@@ -13,6 +13,9 @@ import dev.forge.controller.task.TaskRegistry;
 import dev.forge.controller.task.TaskService;
 import dev.forge.controller.task.TaskStatus;
 
+import dev.forge.controller.event.ExecutionEventService;
+import dev.forge.controller.event.ExecutionEventType;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,12 +51,16 @@ public class WorkflowService {
     private final TaskService
             taskService;
 
+    private final ExecutionEventService
+            executionEventService;
+
 
     public WorkflowService(
             ForgeWorkflowRepository workflowRepository,
             TaskRegistry taskRegistry,
             TaskAttemptRegistry taskAttemptRegistry,
-            TaskService taskService) {
+            TaskService taskService,
+            ExecutionEventService executionEventService) {
 
         this.workflowRepository =
                 workflowRepository;
@@ -66,6 +73,9 @@ public class WorkflowService {
 
         this.taskService =
                 taskService;
+
+        this.executionEventService =
+                executionEventService;
     }
 
 
@@ -186,6 +196,55 @@ public class WorkflowService {
         taskRegistry.saveAll(
                 forgeTasks
         );
+
+
+        /*
+         * Both the workflow and all tasks now exist
+         * durably, so foreign-key-backed timeline
+         * events can safely be written.
+         */
+        executionEventService.record(
+                ExecutionEventType.WORKFLOW_CREATED,
+                workflow.getId(),
+                null,
+                null,
+                null,
+                "Workflow created with "
+                        + forgeTasks.size()
+                        + " task(s)"
+        );
+
+
+        for (ForgeTask forgeTask :
+                forgeTasks) {
+
+            executionEventService.record(
+                    ExecutionEventType.TASK_CREATED,
+                    workflow.getId(),
+                    forgeTask.getId(),
+                    null,
+                    null,
+                    "Workflow task "
+                            + forgeTask.getWorkflowTaskKey()
+                            + " created"
+            );
+
+
+            executionEventService.record(
+                    forgeTask.getStatus()
+                            == TaskStatus.PENDING
+                            ? ExecutionEventType.TASK_PENDING
+                            : ExecutionEventType.TASK_BLOCKED,
+                    workflow.getId(),
+                    forgeTask.getId(),
+                    null,
+                    null,
+                    forgeTask.getStatus()
+                            == TaskStatus.PENDING
+                            ? "Root workflow task entered PENDING"
+                            : "Workflow task waiting on dependencies"
+            );
+        }
 
 
         List<WorkflowTaskResponse> taskResponses =
@@ -334,11 +393,29 @@ public class WorkflowService {
         * If the process fails during the sweep, the
         * cancellation intent itself survives.
         */
+        boolean cancellationWasAlreadyRequested =
+                workflow.isCancelRequested();
+
+
         workflow.requestCancellation();
 
         workflowRepository.saveAndFlush(
                 workflow
         );
+
+
+        if (!cancellationWasAlreadyRequested) {
+
+            executionEventService.record(
+                    ExecutionEventType.WORKFLOW_CANCEL_REQUESTED,
+                    workflow.getId(),
+                    null,
+                    null,
+                    null,
+                    "Workflow cancellation requested"
+            );
+        }
+
 
         for (ForgeTask task :
                 tasks) {
@@ -372,6 +449,16 @@ public class WorkflowService {
 
                 taskRegistry.save(
                         task
+                );
+
+
+                executionEventService.record(
+                        ExecutionEventType.TASK_CANCELLED,
+                        workflow.getId(),
+                        task.getId(),
+                        null,
+                        task.getWorkerId(),
+                        "Task cancelled while workflow cancellation was applied"
                 );
 
                 continue;
@@ -511,6 +598,9 @@ public class WorkflowService {
     
         boolean resetAnyTask =
                 false;
+
+        List<ForgeTask> resetTasks =
+                new ArrayList<>();
     
     
         /*
@@ -532,6 +622,10 @@ public class WorkflowService {
                     || status == TaskStatus.SKIPPED) {
     
                 task.resetForWorkflowRetry();
+
+                resetTasks.add(
+                        task
+                );
     
                 resetAnyTask =
                         true;
@@ -571,6 +665,38 @@ public class WorkflowService {
         taskRegistry.saveAll(
                 tasks
         );
+
+
+        executionEventService.record(
+                ExecutionEventType.WORKFLOW_RETRY_REQUESTED,
+                workflow.getId(),
+                null,
+                null,
+                null,
+                "Workflow retry requested; reopened "
+                        + resetTasks.size()
+                        + " task(s)"
+        );
+
+
+        for (ForgeTask task :
+                resetTasks) {
+
+            executionEventService.record(
+                    task.getStatus()
+                            == TaskStatus.PENDING
+                            ? ExecutionEventType.TASK_PENDING
+                            : ExecutionEventType.TASK_BLOCKED,
+                    workflow.getId(),
+                    task.getId(),
+                    null,
+                    null,
+                    task.getStatus()
+                            == TaskStatus.PENDING
+                            ? "Workflow retry reopened task as PENDING"
+                            : "Workflow retry reopened task as BLOCKED"
+            );
+        }
     
     
         System.out.println(

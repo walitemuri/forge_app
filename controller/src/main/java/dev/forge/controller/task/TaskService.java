@@ -772,6 +772,16 @@ public class TaskService {
                 );
 
 
+                executionEventService.record(
+                        ExecutionEventType.TASK_CANCELLED,
+                        task.getWorkflowId(),
+                        task.getId(),
+                        null,
+                        null,
+                        "Task cancelled before dispatch"
+                );
+
+
                 System.out.println(
                         "■ UNDISPATCHED TASK CANCELLED: "
                                 + taskId
