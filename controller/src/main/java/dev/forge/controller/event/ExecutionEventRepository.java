@@ -25,4 +25,11 @@ public interface ExecutionEventRepository
     findByAttemptIdOrderByIdAsc(
             String attemptId
     );
+
+
+    boolean existsByEventTypeAndTaskIdAndAttemptId(
+            ExecutionEventType eventType,
+            String taskId,
+            String attemptId
+    );
 }

@@ -44,6 +44,20 @@ public class ExecutionEventService {
     }
 
 
+    public boolean exists(
+            ExecutionEventType type,
+            String taskId,
+            String attemptId) {
+
+        return repository
+                .existsByEventTypeAndTaskIdAndAttemptId(
+                        type,
+                        taskId,
+                        attemptId
+                );
+    }
+
+
     public List<ExecutionEvent> getForTask(
             String taskId) {
 

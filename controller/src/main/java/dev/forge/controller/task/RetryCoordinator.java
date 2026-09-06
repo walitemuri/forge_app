@@ -1,5 +1,8 @@
 package dev.forge.controller.task;
 
+import dev.forge.controller.event.ExecutionEventService;
+import dev.forge.controller.event.ExecutionEventType;
+
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -49,11 +52,15 @@ public class RetryCoordinator {
     private final TaskService
             taskService;
 
+    private final ExecutionEventService
+            executionEventService;
+
 
     public RetryCoordinator(
             TaskRegistry taskRegistry,
             TaskAttemptRegistry taskAttemptRegistry,
-            TaskService taskService) {
+            TaskService taskService,
+            ExecutionEventService executionEventService) {
 
         this.taskRegistry =
                 taskRegistry;
@@ -63,6 +70,9 @@ public class RetryCoordinator {
 
         this.taskService =
                 taskService;
+
+        this.executionEventService =
+                executionEventService;
     }
 
 
@@ -134,6 +144,38 @@ public class RetryCoordinator {
                     )) {
 
                 continue;
+            }
+
+
+            /*
+             * Record this only once for the failed attempt.
+             *
+             * If no worker currently has capacity,
+             * RetryCoordinator will revisit the task later,
+             * but the timeline should not gain another
+             * RETRY_SCHEDULED every second.
+             */
+            if (!executionEventService.exists(
+                    ExecutionEventType.RETRY_SCHEDULED,
+                    task.getId(),
+                    latestAttempt.getId()
+            )) {
+
+                executionEventService.record(
+                        ExecutionEventType.RETRY_SCHEDULED,
+                        task.getWorkflowId(),
+                        task.getId(),
+                        latestAttempt.getId(),
+                        null,
+                        "Retry became eligible after "
+                                + retryDelaySeconds
+                                + " second backoff; next attempt="
+                                + (
+                                        latestAttempt
+                                                .getAttemptNumber()
+                                        + 1
+                                )
+                );
             }
 
 
