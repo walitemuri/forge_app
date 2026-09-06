@@ -433,4 +433,47 @@ public class ForgeTask {
         this.workerId =
                 null;
     }
+    public void resetForWorkflowRetry() {
+    
+        /*
+         * Preserve the task identity and attempt history,
+         * but clear the result belonging to the previous
+         * execution.
+         */
+        this.workerId =
+                null;
+    
+        this.exitCode =
+                null;
+    
+        this.stdout =
+                null;
+    
+        this.stderr =
+                null;
+    
+        this.cancelRequested =
+                false;
+    
+    
+        /*
+         * Re-enter the normal DAG state machine.
+         *
+         * Root tasks can immediately wait for capacity.
+         *
+         * Tasks with dependencies must have their
+         * dependencies checked again by
+         * DependencyCoordinator.
+         */
+        if (dependsOnTaskIds.isEmpty()) {
+    
+            this.status =
+                    TaskStatus.PENDING;
+        }
+        else {
+    
+            this.status =
+                    TaskStatus.BLOCKED;
+        }
+    }
 }

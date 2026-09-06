@@ -557,9 +557,24 @@ public ForgeTask submitTask(
 
         try {
 
+                TaskAttempt latestAttempt =
+                        taskAttemptRegistry
+                                .getLatestForTask(
+                                        taskId
+                                );
+
+
+                int nextAttemptNumber =
+                        latestAttempt == null
+                                ? 1
+                                : latestAttempt
+                                        .getAttemptNumber()
+                                        + 1;
+
+
                 dispatchAttempt(
                         task,
-                        1
+                        nextAttemptNumber
                 );
 
 

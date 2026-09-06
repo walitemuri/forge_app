@@ -403,7 +403,142 @@ public class WorkflowService {
     
         return responses;
     }
-
+    @Transactional
+    public WorkflowResponse retryWorkflow(
+            String workflowId) {
+    
+        ForgeWorkflow workflow =
+                workflowRepository
+                        .findById(
+                                workflowId
+                        )
+                        .orElse(null);
+    
+    
+        if (workflow == null) {
+    
+            return null;
+        }
+    
+    
+        List<ForgeTask> tasks =
+                taskRegistry
+                        .getByWorkflowId(
+                                workflowId
+                        );
+    
+    
+        /*
+         * Do not retry a workflow that is still actively
+         * progressing.
+         *
+         * FAILED / LOST are also considered active if
+         * automatic retry budget remains.
+         */
+        for (ForgeTask task :
+                tasks) {
+    
+            TaskStatus status =
+                    task.getStatus();
+    
+    
+            if (status == TaskStatus.CREATED
+                    || status == TaskStatus.BLOCKED
+                    || status == TaskStatus.PENDING
+                    || status == TaskStatus.DISPATCHED
+                    || status == TaskStatus.RUNNING) {
+    
+                throw new IllegalArgumentException(
+                        "Workflow "
+                                + workflowId
+                                + " cannot be retried while task "
+                                + task.getWorkflowTaskKey()
+                                + " is "
+                                + status
+                );
+            }
+    
+    
+            if ((status == TaskStatus.FAILED
+                    || status == TaskStatus.LOST)
+                    && hasAutomaticRetryRemaining(
+                            task
+                    )) {
+    
+                throw new IllegalArgumentException(
+                        "Workflow "
+                                + workflowId
+                                + " cannot be manually retried "
+                                + "while automatic retries remain for task "
+                                + task.getWorkflowTaskKey()
+                );
+            }
+        }
+    
+    
+        boolean resetAnyTask =
+                false;
+    
+    
+        /*
+         * Successful work is deliberately preserved.
+         *
+         * Only unsuccessful / cancelled portions of
+         * the graph are reopened.
+         */
+        for (ForgeTask task :
+                tasks) {
+    
+            TaskStatus status =
+                    task.getStatus();
+    
+    
+            if (status == TaskStatus.FAILED
+                    || status == TaskStatus.LOST
+                    || status == TaskStatus.CANCELLED
+                    || status == TaskStatus.SKIPPED) {
+    
+                task.resetForWorkflowRetry();
+    
+                resetAnyTask =
+                        true;
+            }
+        }
+    
+    
+        if (!resetAnyTask) {
+    
+            throw new IllegalArgumentException(
+                    "Workflow "
+                            + workflowId
+                            + " has nothing to retry"
+            );
+        }
+    
+    
+        /*
+         * Save the whole reset atomically.
+         *
+         * Scheduled coordinators cannot observe a
+         * partially reset DAG before this transaction
+         * commits.
+         */
+        taskRegistry.saveAll(
+                tasks
+        );
+    
+    
+        System.out.println(
+                "↻ WORKFLOW RETRY QUEUED: workflow="
+                        + workflowId
+        );
+    
+    
+        return getWorkflow(
+                workflowId
+        );
+    }
+    
     private WorkflowStatus determineWorkflowStatus(
             List<ForgeTask> tasks) {
 

@@ -137,4 +137,40 @@ public class WorkflowController {
                         .getWorkflows()
         );
     }
+    @PostMapping("/{workflowId}/retry")
+    public ResponseEntity<?> retryWorkflow(
+            @PathVariable String workflowId) {
+    
+        try {
+    
+            WorkflowResponse workflow =
+                    workflowService
+                            .retryWorkflow(
+                                    workflowId
+                            );
+    
+    
+            if (workflow == null) {
+    
+                return ResponseEntity
+                        .notFound()
+                        .build();
+            }
+    
+    
+            return ResponseEntity
+                    .accepted()
+                    .body(
+                            workflow
+                    );
+        }
+        catch (IllegalArgumentException exception) {
+    
+            return ResponseEntity
+                    .badRequest()
+                    .body(
+                            exception.getMessage()
+                    );
+        }
+    }
 }
