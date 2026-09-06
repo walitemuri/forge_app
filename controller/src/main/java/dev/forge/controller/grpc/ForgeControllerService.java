@@ -6,6 +6,9 @@ import dev.forge.controller.task.TaskAttemptRegistry;
 import dev.forge.controller.task.TaskAttemptStatus;
 import dev.forge.controller.task.TaskRegistry;
 
+import dev.forge.controller.event.ExecutionEventService;
+import dev.forge.controller.event.ExecutionEventType;
+
 import dev.forge.proto.ControllerMessage;
 import dev.forge.proto.ForgeControllerGrpc;
 import dev.forge.proto.HeartbeatRequest;
@@ -27,13 +30,17 @@ public class ForgeControllerService
     private final TaskRegistry taskRegistry;
     private final TaskAttemptRegistry taskAttemptRegistry;
 
+    private final ExecutionEventService executionEventService;
+
 
     public ForgeControllerService(
             TaskRegistry taskRegistry,
-            TaskAttemptRegistry taskAttemptRegistry) {
+            TaskAttemptRegistry taskAttemptRegistry,
+            ExecutionEventService executionEventService) {
 
         this.taskRegistry = taskRegistry;
         this.taskAttemptRegistry = taskAttemptRegistry;
+        this.executionEventService = executionEventService;
     }
 
 
@@ -493,6 +500,26 @@ public class ForgeControllerService
                     );
 
 
+                    executionEventService.record(
+                            ExecutionEventType.ATTEMPT_RUNNING,
+                            task.getWorkflowId(),
+                            task.getId(),
+                            attempt.getId(),
+                            attempt.getWorkerId(),
+                            "Worker accepted execution attempt"
+                    );
+
+
+                    executionEventService.record(
+                            ExecutionEventType.TASK_RUNNING,
+                            task.getWorkflowId(),
+                            task.getId(),
+                            attempt.getId(),
+                            attempt.getWorkerId(),
+                            "Task started running"
+                    );
+
+
                     /*
                      * Only after durable state has been updated may
                      * the worker remove this event from its outbox.
@@ -757,10 +784,81 @@ public class ForgeControllerService
 
 
                     /*
-                     * State is now persisted.
+                     * Record the terminal transition before ACKing
+                     * the reliable worker event.
+                     */
+                    if (result.getCancelled()) {
+
+                        executionEventService.record(
+                                ExecutionEventType.ATTEMPT_CANCELLED,
+                                task.getWorkflowId(),
+                                task.getId(),
+                                attempt.getId(),
+                                attempt.getWorkerId(),
+                                "Execution attempt cancelled"
+                        );
+
+
+                        executionEventService.record(
+                                ExecutionEventType.TASK_CANCELLED,
+                                task.getWorkflowId(),
+                                task.getId(),
+                                attempt.getId(),
+                                attempt.getWorkerId(),
+                                "Task cancelled"
+                        );
+                    }
+                    else if (result.getSuccess()) {
+
+                        executionEventService.record(
+                                ExecutionEventType.ATTEMPT_SUCCEEDED,
+                                task.getWorkflowId(),
+                                task.getId(),
+                                attempt.getId(),
+                                attempt.getWorkerId(),
+                                "Execution attempt succeeded"
+                        );
+
+
+                        executionEventService.record(
+                                ExecutionEventType.TASK_SUCCEEDED,
+                                task.getWorkflowId(),
+                                task.getId(),
+                                attempt.getId(),
+                                attempt.getWorkerId(),
+                                "Task succeeded"
+                        );
+                    }
+                    else {
+
+                        executionEventService.record(
+                                ExecutionEventType.ATTEMPT_FAILED,
+                                task.getWorkflowId(),
+                                task.getId(),
+                                attempt.getId(),
+                                attempt.getWorkerId(),
+                                "Execution attempt failed with exit code "
+                                        + result.getExitCode()
+                        );
+
+
+                        executionEventService.record(
+                                ExecutionEventType.TASK_FAILED,
+                                task.getWorkflowId(),
+                                task.getId(),
+                                attempt.getId(),
+                                attempt.getWorkerId(),
+                                "Task failed with exit code "
+                                        + result.getExitCode()
+                        );
+                    }
+
+
+                    /*
+                     * State and timeline are now persisted.
                      *
-                     * ACK only after both attempt + logical task
-                     * state were saved.
+                     * The worker may now remove this result from
+                     * its reliable outbox.
                      */
                     acknowledgeEvent(
                             eventId

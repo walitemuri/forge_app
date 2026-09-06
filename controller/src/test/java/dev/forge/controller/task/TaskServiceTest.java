@@ -2,6 +2,7 @@ package dev.forge.controller.task;
 
 import dev.forge.controller.scheduler.TaskScheduler;
 import dev.forge.controller.workflow.WorkflowExecutionGuard;
+import dev.forge.controller.event.ExecutionEventService;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,9 @@ class TaskServiceTest {
     @Mock
     private WorkflowExecutionGuard workflowExecutionGuard;
 
+    @Mock
+    private ExecutionEventService executionEventService;
+
     private TaskService taskService;
 
 
@@ -46,7 +50,8 @@ class TaskServiceTest {
                         taskRegistry,
                         taskAttemptRegistry,
                         taskScheduler,
-                        workflowExecutionGuard
+                        workflowExecutionGuard,
+                        executionEventService
                 );
     }
 

@@ -15,6 +15,8 @@ import dev.forge.proto.CancelTask;
 import java.util.ArrayList;
 
 import dev.forge.controller.workflow.WorkflowExecutionGuard;
+import dev.forge.controller.event.ExecutionEventService;
+import dev.forge.controller.event.ExecutionEventType;
 
 @Service
 public class TaskService {
@@ -26,6 +28,9 @@ public class TaskService {
 
     private final WorkflowExecutionGuard
         workflowExecutionGuard;
+
+    private final ExecutionEventService
+        executionEventService;
         
     private final TaskScheduler taskScheduler;
 
@@ -34,7 +39,8 @@ public class TaskService {
         TaskRegistry taskRegistry,
         TaskAttemptRegistry taskAttemptRegistry,
         TaskScheduler taskScheduler,
-        WorkflowExecutionGuard workflowExecutionGuard) {
+        WorkflowExecutionGuard workflowExecutionGuard,
+        ExecutionEventService executionEventService) {
 
         this.taskRegistry =
                 taskRegistry;
@@ -47,6 +53,9 @@ public class TaskService {
 
         this.workflowExecutionGuard =
                 workflowExecutionGuard;
+
+        this.executionEventService =
+                executionEventService;
     }
 
     public ForgeTask submitTask(
@@ -158,6 +167,28 @@ public class TaskService {
                 taskRegistry.register(
                         task
                 );
+
+
+        executionEventService.record(
+                ExecutionEventType.TASK_CREATED,
+                task.getWorkflowId(),
+                task.getId(),
+                null,
+                null,
+                "Task created"
+        );
+
+
+        executionEventService.record(
+                task.getStatus() == TaskStatus.PENDING
+                        ? ExecutionEventType.TASK_PENDING
+                        : ExecutionEventType.TASK_BLOCKED,
+                task.getWorkflowId(),
+                task.getId(),
+                null,
+                null,
+                "Task entered " + task.getStatus() + " state"
+        );
 
 
         System.out.println(
@@ -415,6 +446,18 @@ public class TaskService {
                 );
 
 
+        executionEventService.record(
+                ExecutionEventType.ATTEMPT_CREATED,
+                task.getWorkflowId(),
+                task.getId(),
+                attempt.getId(),
+                null,
+                "Execution attempt "
+                        + attempt.getAttemptNumber()
+                        + " created"
+        );
+
+
         /*
          * Persist ownership before sending over gRPC.
          */
@@ -435,6 +478,29 @@ public class TaskService {
                 taskAttemptRegistry.save(
                         attempt
                 );
+
+
+        executionEventService.record(
+                ExecutionEventType.TASK_DISPATCHED,
+                task.getWorkflowId(),
+                task.getId(),
+                attempt.getId(),
+                worker.getWorkerId(),
+                "Task dispatched to worker "
+                        + worker.getWorkerId()
+        );
+
+
+        executionEventService.record(
+                ExecutionEventType.ATTEMPT_DISPATCHED,
+                task.getWorkflowId(),
+                task.getId(),
+                attempt.getId(),
+                worker.getWorkerId(),
+                "Attempt "
+                        + attempt.getAttemptNumber()
+                        + " dispatched"
+        );
 
 
         TaskAssignment assignment =
@@ -494,6 +560,26 @@ public class TaskService {
 
             taskRegistry.save(
                     task
+            );
+
+
+            executionEventService.record(
+                    ExecutionEventType.ATTEMPT_FAILED,
+                    task.getWorkflowId(),
+                    task.getId(),
+                    attempt.getId(),
+                    worker.getWorkerId(),
+                    "Attempt failed before execution because dispatch failed"
+            );
+
+
+            executionEventService.record(
+                    ExecutionEventType.TASK_FAILED,
+                    task.getWorkflowId(),
+                    task.getId(),
+                    attempt.getId(),
+                    worker.getWorkerId(),
+                    "Task dispatch failed"
             );
 
 
