@@ -39,6 +39,9 @@ public class ForgeControllerService
     private final WorkerAuthorityService
             workerAuthorityService;
 
+    private final WorkerTakeoverService
+            workerTakeoverService;
+
 
     public ForgeControllerService(
             TaskRegistry taskRegistry,
@@ -47,7 +50,9 @@ public class ForgeControllerService
             WorkerSessionRecoveryCoordinator
                     workerSessionRecoveryCoordinator,
             WorkerAuthorityService
-                    workerAuthorityService) {
+                    workerAuthorityService,
+            WorkerTakeoverService
+                    workerTakeoverService) {
 
         this.taskRegistry = taskRegistry;
         this.taskAttemptRegistry = taskAttemptRegistry;
@@ -57,6 +62,9 @@ public class ForgeControllerService
 
         this.workerAuthorityService =
                 workerAuthorityService;
+
+        this.workerTakeoverService =
+                workerTakeoverService;
     }
 
 
@@ -433,31 +441,26 @@ public class ForgeControllerService
 
 
             /*
-             * Persist replay grace FIRST.
+             * The recovery grace and the durable authority
+             * transfer are one database transaction.
              *
-             * If Forge crashes here, authority still belongs to A
-             * and A's grace row exists. That state is recoverable.
+             * Either:
+             *
+             *     recovery(A) + authority A -> B
+             *
+             * both commit, or neither does.
              */
-            workerSessionRecoveryCoordinator
-                    .scheduleRecovery(
-                            workerId,
-                            oldSession
-                    );
+            try {
 
+                workerTakeoverService
+                        .takeover(
+                                workerId,
+                                oldSession,
+                                sessionId
+                        );
 
-            /*
-             * Atomic durable fencing decision:
-             *
-             *     A -> B
-             *
-             * only if PostgreSQL STILL says A.
-             */
-            if (!workerAuthorityService
-                    .transferAuthority(
-                            workerId,
-                            oldSession,
-                            sessionId
-                    )) {
+            }
+            catch (WorkerTakeoverConflictException exc) {
 
                 System.err.println(
                         "FENCED worker takeover because authority "
