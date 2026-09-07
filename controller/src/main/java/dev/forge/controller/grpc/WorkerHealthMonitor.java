@@ -73,8 +73,9 @@ public class WorkerHealthMonitor {
                  * Reconcile any work owned by this worker.
                  */
                 workerFailureService
-                        .handleWorkerLost(
-                                worker.getWorkerId()
+                        .handleWorkerSessionLost(
+                                worker.getWorkerId(),
+                                worker.getSessionId()
                         );
 
 

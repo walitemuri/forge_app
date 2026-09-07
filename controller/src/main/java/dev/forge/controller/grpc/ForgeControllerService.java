@@ -32,16 +32,22 @@ public class ForgeControllerService
     private final TaskAttemptRegistry taskAttemptRegistry;
 
     private final ExecutionEventService executionEventService;
+    private final WorkerSessionRecoveryCoordinator
+            workerSessionRecoveryCoordinator;
 
 
     public ForgeControllerService(
             TaskRegistry taskRegistry,
             TaskAttemptRegistry taskAttemptRegistry,
-            ExecutionEventService executionEventService) {
+            ExecutionEventService executionEventService,
+            WorkerSessionRecoveryCoordinator
+                    workerSessionRecoveryCoordinator) {
 
         this.taskRegistry = taskRegistry;
         this.taskAttemptRegistry = taskAttemptRegistry;
         this.executionEventService = executionEventService;
+        this.workerSessionRecoveryCoordinator =
+                workerSessionRecoveryCoordinator;
     }
 
 
@@ -70,6 +76,12 @@ public class ForgeControllerService
                 && existing.hasSession(
                         request.getSessionId()
                 )) {
+
+            workerSessionRecoveryCoordinator
+                    .cancelRecovery(
+                            request.getWorkerId(),
+                            request.getSessionId()
+                    );
 
             existing.refreshRegistration();
 
@@ -163,6 +175,12 @@ public class ForgeControllerService
             );
 
 
+            workerSessionRecoveryCoordinator
+                    .scheduleRecovery(
+                            existing.getWorkerId(),
+                            existing.getSessionId()
+                    );
+
             existing.setOnline(
                     false
             );
@@ -186,6 +204,12 @@ public class ForgeControllerService
         WorkerRegistry.register(
                 worker
         );
+
+        workerSessionRecoveryCoordinator
+                .cancelRecovery(
+                        request.getWorkerId(),
+                        request.getSessionId()
+                );
 
 
         System.out.println();

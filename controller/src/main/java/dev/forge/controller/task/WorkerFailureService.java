@@ -1,5 +1,8 @@
 package dev.forge.controller.task;
 
+import dev.forge.controller.event.ExecutionEventService;
+import dev.forge.controller.event.ExecutionEventType;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,16 +18,23 @@ public class WorkerFailureService {
     private final TaskAttemptRegistry
             taskAttemptRegistry;
 
+    private final ExecutionEventService
+            executionEventService;
+
 
     public WorkerFailureService(
             TaskRegistry taskRegistry,
-            TaskAttemptRegistry taskAttemptRegistry) {
+            TaskAttemptRegistry taskAttemptRegistry,
+            ExecutionEventService executionEventService) {
 
         this.taskRegistry =
                 taskRegistry;
 
         this.taskAttemptRegistry =
                 taskAttemptRegistry;
+
+        this.executionEventService =
+                executionEventService;
     }
 
 
@@ -32,18 +42,65 @@ public class WorkerFailureService {
     public void handleWorkerLost(
             String workerId) {
 
-        List<TaskAttempt> activeAttempts =
+        executionEventService.record(
+                ExecutionEventType.WORKER_LOST,
+                null,
+                null,
+                null,
+                workerId,
+                "Worker became unreachable"
+        );
+
+
+        recoverAttempts(
                 taskAttemptRegistry
                         .getActiveForWorker(
                                 workerId
-                        );
+                        ),
+                workerId
+        );
+    }
 
+
+    @Transactional
+    public void handleWorkerSessionLost(
+            String workerId,
+            String workerSessionId) {
+
+        executionEventService.record(
+                ExecutionEventType.WORKER_LOST,
+                null,
+                null,
+                null,
+                workerId,
+                "Worker session "
+                        + workerSessionId
+                        + " became unreachable"
+        );
+
+
+        recoverAttempts(
+                taskAttemptRegistry
+                        .getActiveForWorkerSession(
+                                workerId,
+                                workerSessionId
+                        ),
+                workerId
+                        + "/"
+                        + workerSessionId
+        );
+    }
+
+
+    private void recoverAttempts(
+            List<TaskAttempt> activeAttempts,
+            String ownerDescription) {
 
         if (activeAttempts.isEmpty()) {
 
             System.out.println(
-                    "No active attempts assigned to lost worker "
-                            + workerId
+                    "No active attempts assigned to "
+                            + ownerDescription
             );
 
             return;
@@ -63,10 +120,12 @@ public class WorkerFailureService {
                     attempt.getTaskId();
 
 
-            /*
-             * The physical attempt definitely belonged
-             * to the lost worker.
-             */
+            ForgeTask task =
+                    taskRegistry.get(
+                            taskId
+                    );
+
+
             System.out.println(
                     "Marking attempt LOST: "
                             + attempt.getId()
@@ -84,12 +143,22 @@ public class WorkerFailureService {
             );
 
 
+            executionEventService.record(
+                    ExecutionEventType.ATTEMPT_LOST,
+                    task == null
+                            ? null
+                            : task.getWorkflowId(),
+                    taskId,
+                    attempt.getId(),
+                    attempt.getWorkerId(),
+                    "Execution attempt lost with "
+                            + ownerDescription
+            );
+
+
             /*
-             * Only the newest attempt is allowed to
-             * control logical task state.
-             *
-             * This keeps an older worker failure from
-             * corrupting a newer retry.
+             * Only the latest physical attempt may
+             * control the logical task.
              */
             TaskAttempt latestAttempt =
                     taskAttemptRegistry
@@ -105,18 +174,8 @@ public class WorkerFailureService {
                                     attempt.getId()
                             )) {
 
-                System.out.println(
-                        "Attempt is stale; logical task unchanged."
-                );
-
                 continue;
             }
-
-
-            ForgeTask task =
-                    taskRegistry.get(
-                            taskId
-                    );
 
 
             if (task == null) {
@@ -139,9 +198,14 @@ public class WorkerFailureService {
                 );
 
 
-                System.out.println(
-                        "Marking task LOST: "
-                                + taskId
+                executionEventService.record(
+                        ExecutionEventType.TASK_LOST,
+                        task.getWorkflowId(),
+                        task.getId(),
+                        attempt.getId(),
+                        attempt.getWorkerId(),
+                        "Task lost with "
+                                + ownerDescription
                 );
             }
         }

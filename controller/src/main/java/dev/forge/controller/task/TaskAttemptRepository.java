@@ -24,4 +24,12 @@ public interface TaskAttemptRepository
             String workerId,
             Collection<TaskAttemptStatus> statuses
     );
+
+
+    List<TaskAttempt>
+    findByWorkerIdAndWorkerSessionIdAndStatusIn(
+            String workerId,
+            String workerSessionId,
+            Collection<TaskAttemptStatus> statuses
+    );
 }

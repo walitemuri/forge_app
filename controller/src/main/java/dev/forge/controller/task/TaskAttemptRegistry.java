@@ -3,6 +3,7 @@ package dev.forge.controller.task;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 
 
@@ -42,8 +43,12 @@ public class TaskAttemptRegistry {
             String attemptId) {
 
         return repository
-                .findById(attemptId)
-                .orElse(null);
+                .findById(
+                        attemptId
+                )
+                .orElse(
+                        null
+                );
     }
 
 
@@ -60,36 +65,62 @@ public class TaskAttemptRegistry {
     public List<TaskAttempt> getByStatuses(
             Collection<TaskAttemptStatus> statuses) {
 
-        return repository.findByStatusIn(
-                statuses
-        );
+        return repository
+                .findByStatusIn(
+                        statuses
+                );
     }
 
+
     public TaskAttempt getLatestForTask(
-        String taskId) {
+            String taskId) {
 
         List<TaskAttempt> attempts =
-                getForTask(taskId);
+                getForTask(
+                        taskId
+                );
+
 
         if (attempts.isEmpty()) {
-                return null;
+
+            return null;
         }
+
 
         return attempts.get(
                 attempts.size() - 1
         );
     }
+
+
     public List<TaskAttempt> getActiveForWorker(
-        String workerId) {
+            String workerId) {
 
         return repository
                 .findByWorkerIdAndStatusIn(
                         workerId,
-                        java.util.EnumSet.of(
+                        EnumSet.of(
                                 TaskAttemptStatus.CREATED,
                                 TaskAttemptStatus.DISPATCHED,
                                 TaskAttemptStatus.RUNNING
                         )
                 );
-        }
+    }
+
+
+    public List<TaskAttempt> getActiveForWorkerSession(
+            String workerId,
+            String workerSessionId) {
+
+        return repository
+                .findByWorkerIdAndWorkerSessionIdAndStatusIn(
+                        workerId,
+                        workerSessionId,
+                        EnumSet.of(
+                                TaskAttemptStatus.CREATED,
+                                TaskAttemptStatus.DISPATCHED,
+                                TaskAttemptStatus.RUNNING
+                        )
+                );
+    }
 }
