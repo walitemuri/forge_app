@@ -1,12 +1,208 @@
 #include "ReliableEventSender.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cctype>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <system_error>
 #include <utility>
 #include <vector>
+
+#include <fcntl.h>
+#include <unistd.h>
+
+#ifdef __APPLE__
+#include <sys/fcntl.h>
+#endif
+
+namespace {
+
+/*
+ * Force buffered filesystem state toward durable storage.
+ *
+ * Linux/WSL:
+ *     fsync()
+ *
+ * macOS:
+ *     F_FULLFSYNC when available, then fsync fallback.
+ */
+bool syncDescriptor(
+        int descriptor,
+        const std::string& description,
+        bool allowUnsupported)
+{
+#ifdef __APPLE__
+
+    if (::fcntl(
+            descriptor,
+            F_FULLFSYNC) == 0)
+    {
+        return true;
+    }
+
+
+    if (errno != EINVAL
+            && errno != ENOTSUP)
+    {
+        std::cerr
+            << "[outbox] F_FULLFSYNC failed for "
+            << description
+            << ": "
+            << std::strerror(errno)
+            << "\n";
+
+        return false;
+    }
+
+#endif
+
+
+    while (true)
+    {
+        if (::fsync(
+                descriptor) == 0)
+        {
+            return true;
+        }
+
+
+        if (errno == EINTR)
+        {
+            continue;
+        }
+
+
+        /*
+         * Some filesystems/platforms do not support
+         * fsync on directory descriptors.
+         *
+         * Regular event files never use this escape
+         * hatch; only directory metadata syncing does.
+         */
+        if (allowUnsupported
+                && (
+                    errno == EINVAL
+                    || errno == ENOTSUP
+#ifdef EOPNOTSUPP
+                    || errno == EOPNOTSUPP
+#endif
+                ))
+        {
+            std::cerr
+                << "[outbox] directory fsync unsupported for "
+                << description
+                << "; continuing with reduced metadata "
+                << "durability guarantee\n";
+
+            return true;
+        }
+
+
+        std::cerr
+            << "[outbox] fsync failed for "
+            << description
+            << ": "
+            << std::strerror(errno)
+            << "\n";
+
+        return false;
+    }
+}
+
+
+bool syncFile(
+        const std::filesystem::path& path)
+{
+    const int descriptor =
+        ::open(
+            path.c_str(),
+            O_RDONLY
+        );
+
+
+    if (descriptor < 0)
+    {
+        std::cerr
+            << "[outbox] unable to open for fsync "
+            << path.string()
+            << ": "
+            << std::strerror(errno)
+            << "\n";
+
+        return false;
+    }
+
+
+    const bool synced =
+        syncDescriptor(
+            descriptor,
+            path.string(),
+            false
+        );
+
+
+    ::close(
+        descriptor
+    );
+
+
+    return synced;
+}
+
+
+bool syncDirectory(
+        const std::filesystem::path& path)
+{
+    int flags =
+        O_RDONLY;
+
+#ifdef O_DIRECTORY
+
+    flags |=
+        O_DIRECTORY;
+
+#endif
+
+
+    const int descriptor =
+        ::open(
+            path.c_str(),
+            flags
+        );
+
+
+    if (descriptor < 0)
+    {
+        std::cerr
+            << "[outbox] unable to open directory for fsync "
+            << path.string()
+            << ": "
+            << std::strerror(errno)
+            << "\n";
+
+        return false;
+    }
+
+
+    const bool synced =
+        syncDescriptor(
+            descriptor,
+            path.string(),
+            true
+        );
+
+
+    ::close(
+        descriptor
+    );
+
+
+    return synced;
+}
+
+} // namespace
 
 
 ReliableEventSender::ReliableEventSender(
@@ -262,6 +458,26 @@ bool ReliableEventSender::persistEvent(
     }
 
 
+    /*
+     * std::ofstream::flush() only flushes userspace
+     * buffering. Reopen the completed temporary file
+     * and fsync it before making it visible as an
+     * event file.
+     */
+    if (!syncFile(
+            temporaryPath))
+    {
+        std::error_code cleanupError;
+
+        std::filesystem::remove(
+            temporaryPath,
+            cleanupError
+        );
+
+        return false;
+    }
+
+
     std::error_code error;
 
 
@@ -307,6 +523,18 @@ bool ReliableEventSender::persistEvent(
     }
 
 
+    /*
+     * The file contents are durable, but the rename is
+     * directory metadata. Sync the containing directory
+     * so the .event name itself survives a host crash.
+     */
+    if (!syncDirectory(
+            storageDirectory_))
+    {
+        return false;
+    }
+
+
     return true;
 }
 
@@ -323,6 +551,29 @@ void ReliableEventSender::removePersistedEvent(
         ),
         error
     );
+
+
+    if (!error)
+    {
+        /*
+         * Persist removal of the acknowledged event.
+         *
+         * Failure here is safe: the worst case is that
+         * the old event reappears after a host crash and
+         * is replayed. Controller idempotency will ACK it
+         * again.
+         */
+        if (!syncDirectory(
+                storageDirectory_))
+        {
+            std::cerr
+                << "[outbox] unable to durably record removal of "
+                << eventId
+                << "\n";
+        }
+
+        return;
+    }
 
 
     if (error)
@@ -506,12 +757,10 @@ void ReliableEventSender::enqueue(
                 message))
         {
             std::cerr
-                << "[outbox] WARNING: "
-                << "event is being kept only "
-                << "in memory because disk "
-                << "persistence failed: "
+                << "[outbox] WARNING: durability could not "
+                << "be confirmed for event "
                 << eventId
-                << "\n";
+                << "; continuing with in-memory delivery only\n";
         }
 
 
