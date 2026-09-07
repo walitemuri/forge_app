@@ -104,6 +104,18 @@ public class ForgeControllerService
     }
 
 
+    private Object workerRegistrationLock(
+            String workerId) {
+
+        return workerRegistrationLocks
+                .computeIfAbsent(
+                        workerId,
+                        ignored ->
+                                new Object()
+                );
+    }
+
+
     // =========================================================
     // Worker registration
     // =========================================================
@@ -118,12 +130,9 @@ public class ForgeControllerService
 
 
         Object registrationLock =
-                workerRegistrationLocks
-                        .computeIfAbsent(
-                                workerId,
-                                ignored ->
-                                        new Object()
-                        );
+                workerRegistrationLock(
+                        workerId
+                );
 
 
         synchronized (registrationLock) {
@@ -671,8 +680,8 @@ public class ForgeControllerService
                     false
             );
 
-            existing.setCommandStream(
-                    null
+            existing.disconnectCommandStream(
+                    "Worker session superseded by new authority"
             );
         }
 
@@ -1025,44 +1034,63 @@ public class ForgeControllerService
                                     .getSessionId();
 
 
-                    WorkerState worker =
-                            WorkerRegistry.get(
+                    /*
+                     * Registration/takeover and command-stream
+                     * attachment must agree on one atomic view of
+                     * the stable worker ID.
+                     *
+                     * Without this lock a stale WorkerHello could
+                     * validate session A, pause, let session C take
+                     * authority, and then attach A's stream to the
+                     * detached old WorkerState.
+                     */
+                    Object registrationLock =
+                            workerRegistrationLock(
                                     connectedWorkerId
                             );
 
 
-                    if (worker == null
-                            || !worker.hasSession(
-                                    connectedSessionId
-                            )) {
+                    synchronized (registrationLock) {
 
-                        fenced =
-                                true;
+                        WorkerState worker =
+                                WorkerRegistry.get(
+                                        connectedWorkerId
+                                );
 
 
-                        System.err.println(
-                                "FENCED stale command stream: worker="
-                                        + connectedWorkerId
-                                        + " session="
-                                        + connectedSessionId
+                        if (worker == null
+                                || !worker.hasSession(
+                                        connectedSessionId
+                                )) {
+
+                            fenced =
+                                    true;
+
+
+                            System.err.println(
+                                    "FENCED stale command stream: worker="
+                                            + connectedWorkerId
+                                            + " session="
+                                            + connectedSessionId
+                            );
+
+
+                            responseObserver.onError(
+                                    Status.FAILED_PRECONDITION
+                                            .withDescription(
+                                                    "Stale worker session"
+                                            )
+                                            .asRuntimeException()
+                            );
+
+                            return;
+                        }
+
+
+                        worker.setCommandStream(
+                                responseObserver
                         );
-
-
-                        responseObserver.onError(
-                                Status.FAILED_PRECONDITION
-                                        .withDescription(
-                                                "Stale worker session"
-                                        )
-                                        .asRuntimeException()
-                        );
-
-                        return;
                     }
-
-
-                    worker.setCommandStream(
-                            responseObserver
-                    );
 
 
                     System.out.println(
