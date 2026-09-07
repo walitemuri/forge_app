@@ -21,12 +21,15 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -456,6 +459,337 @@ class WorkerRegistrationConcurrencyTest {
         finally {
 
             releaseWorkerARead
+                    .countDown();
+
+            executor.shutdownNow();
+        }
+    }
+
+
+    @Test
+    void coldStartTakeoverAndAuthoritativeReconnectStayConsistent()
+            throws Exception {
+
+        String workerId =
+                "boundary-race-worker-"
+                        + UUID.randomUUID();
+
+        String sessionA =
+                "session-a";
+
+        String sessionC =
+                "session-c";
+
+
+        /*
+         * Simulated PostgreSQL authority.
+         *
+         * Controller restart begins with:
+         *
+         *     authority = A
+         *     WorkerRegistry = empty
+         */
+        AtomicReference<String> authority =
+                new AtomicReference<>(
+                        sessionA
+                );
+
+        AtomicReference<String> retiredSession =
+                new AtomicReference<>(
+                        null
+                );
+
+        AtomicInteger authorityReads =
+                new AtomicInteger();
+
+
+        CountDownLatch takeoverEntered =
+                new CountDownLatch(1);
+
+        CountDownLatch releaseTakeover =
+                new CountDownLatch(1);
+
+
+        when(
+                authorityService
+                        .getAuthoritativeSession(
+                                eq(workerId)
+                        )
+        ).thenAnswer(invocation -> {
+
+            authorityReads.incrementAndGet();
+
+            return authority.get();
+        });
+
+
+        when(
+                sessionHistoryService
+                        .isRetired(
+                                eq(workerId),
+                                anyString()
+                        )
+        ).thenAnswer(invocation -> {
+
+            String requestedSession =
+                    invocation.getArgument(
+                            1
+                    );
+
+            String retired =
+                    retiredSession.get();
+
+
+            return retired != null
+                    && retired.equals(
+                            requestedSession
+                    );
+        });
+
+
+        /*
+         * We are exactly at / just beyond the cold-start grace
+         * boundary, so fresh C is eligible to attempt takeover.
+         */
+        when(
+                coldStartGrace.isActive()
+        ).thenReturn(
+                false
+        );
+
+
+        /*
+         * Simulate WorkerTakeoverService's atomic transaction:
+         *
+         *     retire A
+         *     authority A -> C
+         *
+         * We deliberately block inside the transaction so A can
+         * try reconnecting at precisely the dangerous moment.
+         */
+        doAnswer(invocation -> {
+
+            String expectedSession =
+                    invocation.getArgument(
+                            1
+                    );
+
+            String newSession =
+                    invocation.getArgument(
+                            2
+                    );
+
+
+            takeoverEntered
+                    .countDown();
+
+
+            boolean released =
+                    releaseTakeover
+                            .await(
+                                    5,
+                                    TimeUnit.SECONDS
+                            );
+
+
+            if (!released) {
+
+                throw new AssertionError(
+                        "Timed out waiting to release "
+                                + "cold-start takeover"
+                );
+            }
+
+
+            if (!authority.compareAndSet(
+                    expectedSession,
+                    newSession)) {
+
+                throw new WorkerTakeoverConflictException(
+                        "Simulated authority CAS failed"
+                );
+            }
+
+
+            retiredSession.set(
+                    expectedSession
+            );
+
+
+            return null;
+
+        }).when(
+                takeoverService
+        ).takeover(
+                eq(workerId),
+                eq(sessionA),
+                eq(sessionC)
+        );
+
+
+        ForgeControllerService service =
+                new ForgeControllerService(
+                        taskRegistry,
+                        taskAttemptRegistry,
+                        executionEventService,
+                        recoveryCoordinator,
+                        authorityService,
+                        takeoverService,
+                        sessionHistoryService,
+                        coldStartGrace
+                );
+
+
+        RegisterWorkerRequest requestA =
+                workerRequest(
+                        workerId,
+                        sessionA
+                );
+
+        RegisterWorkerRequest requestC =
+                workerRequest(
+                        workerId,
+                        sessionC
+                );
+
+
+        @SuppressWarnings("unchecked")
+        StreamObserver<RegisterWorkerResponse>
+                responseA =
+                mock(StreamObserver.class);
+
+        @SuppressWarnings("unchecked")
+        StreamObserver<RegisterWorkerResponse>
+                responseC =
+                mock(StreamObserver.class);
+
+
+        ExecutorService executor =
+                Executors.newFixedThreadPool(
+                        2
+                );
+
+
+        try {
+
+            /*
+             * Fresh C reaches the expired grace boundary first.
+             */
+            Future<?> futureC =
+                    executor.submit(
+                            () ->
+                                    service.registerWorker(
+                                            requestC,
+                                            responseC
+                                    )
+                    );
+
+
+            assertTrue(
+                    takeoverEntered
+                            .await(
+                                    2,
+                                    TimeUnit.SECONDS
+                            ),
+                    "Fresh session C never entered takeover"
+            );
+
+
+            /*
+             * Authoritative A now reconnects while C is blocked
+             * halfway through its registration decision.
+             */
+            Future<?> futureA =
+                    executor.submit(
+                            () ->
+                                    service.registerWorker(
+                                            requestA,
+                                            responseA
+                                    )
+                    );
+
+
+            /*
+             * A must be blocked on the SAME per-worker
+             * registration lock.
+             *
+             * If it reaches PostgreSQL now, we have recreated
+             * the old race.
+             */
+            Thread.sleep(
+                    300
+            );
+
+
+            assertEquals(
+                    1,
+                    authorityReads.get(),
+                    "Authoritative A entered the ownership "
+                            + "decision while C's takeover was "
+                            + "still in progress"
+            );
+
+
+            /*
+             * Allow C's durable takeover to commit.
+             */
+            releaseTakeover
+                    .countDown();
+
+
+            futureC.get(
+                    5,
+                    TimeUnit.SECONDS
+            );
+
+            futureA.get(
+                    5,
+                    TimeUnit.SECONDS
+            );
+
+
+            /*
+             * C won the durable decision.
+             *
+             * A must subsequently observe itself as retired and
+             * must NOT overwrite the in-memory registry.
+             */
+            assertEquals(
+                    sessionC,
+                    authority.get(),
+                    "Durable authority did not remain with C"
+            );
+
+
+            WorkerState registered =
+                    WorkerRegistry.get(
+                            workerId
+                    );
+
+
+            assertNotNull(
+                    registered,
+                    "WorkerRegistry lost the winning worker"
+            );
+
+
+            assertEquals(
+                    sessionC,
+                    registered.getSessionId(),
+                    "WorkerRegistry disagrees with durable authority"
+            );
+
+
+            assertEquals(
+                    sessionA,
+                    retiredSession.get(),
+                    "Superseded A was not retired"
+            );
+
+        }
+        finally {
+
+            releaseTakeover
                     .countDown();
 
             executor.shutdownNow();
