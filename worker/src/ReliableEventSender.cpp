@@ -717,8 +717,7 @@ std::string ReliableEventSender::extractEventId(
 void ReliableEventSender::setStream(
         std::shared_ptr<CommandStream> stream)
 {
-    std::vector<std::string>
-        replay;
+    std::size_t pending = 0;
 
 
     {
@@ -731,30 +730,31 @@ void ReliableEventSender::setStream(
             std::move(stream);
 
 
-        replay.assign(
-            order_.begin(),
-            order_.end()
-        );
+        /*
+         * A new stream has never seen any of our pending
+         * events. Replaying them is intentional and safe
+         * because controller processing is idempotent.
+         */
+        sentOnCurrentStream_.clear();
+
+
+        pending =
+            pending_.size();
     }
 
 
-    if (!replay.empty())
+    if (pending > 0)
     {
         std::cout
             << "[outbox] replaying "
-            << replay.size()
-            << " unacknowledged event(s)\n";
+            << pending
+            << " pending event(s)\n";
     }
 
 
-    for (const auto& eventId :
-            replay)
-    {
-        sendOne(
-            eventId
-        );
-    }
+    sendReadyEvents();
 }
+
 
 
 void ReliableEventSender::clearStream(
@@ -768,6 +768,8 @@ void ReliableEventSender::clearStream(
     if (stream_ == expected)
     {
         stream_.reset();
+
+        sentOnCurrentStream_.clear();
     }
 }
 
@@ -936,9 +938,7 @@ void ReliableEventSender::persistenceLoop()
             if (tryPersistPending(
                     eventId))
             {
-                sendOne(
-                    eventId
-                );
+                sendReadyEvents();
             }
             else
             {
@@ -1024,9 +1024,7 @@ void ReliableEventSender::enqueue(
     if (tryPersistPending(
             eventId))
     {
-        sendOne(
-            eventId
-        );
+        sendReadyEvents();
 
         return;
     }
@@ -1082,6 +1080,11 @@ void ReliableEventSender::acknowledge(
         );
 
 
+        sentOnCurrentStream_.erase(
+            eventId
+        );
+
+
         order_.erase(
             std::remove(
                 order_.begin(),
@@ -1118,70 +1121,143 @@ ReliableEventSender::pendingCount() const
 }
 
 
-void ReliableEventSender::sendOne(
-        const std::string& eventId)
+void ReliableEventSender::sendReadyEvents()
 {
-    std::shared_ptr<CommandStream>
-        stream;
-
-    forge::v1::WorkerMessage
-        message;
-
-
-    {
-        std::lock_guard<std::mutex> lock(
-            stateMutex_
-        );
-
-
-        auto iterator =
-            pending_.find(
-                eventId
-            );
-
-
-        if (iterator
-                == pending_.end()
-                || !stream_
-                || !durable_.contains(
-                    eventId))
-        {
-            return;
-        }
-
-
-        stream =
-            stream_;
-
-        message =
-            iterator->second;
-    }
-
-
+    /*
+     * Only one thread may advance the outbound stream at
+     * a time. This makes order_ the actual wire order.
+     */
     std::lock_guard<std::mutex> writeLock(
         writeMutex_
     );
 
 
+    while (true)
     {
-        std::lock_guard<std::mutex> lock(
-            stateMutex_
-        );
+        std::shared_ptr<CommandStream>
+            stream;
+
+        forge::v1::WorkerMessage
+            message;
+
+        std::string
+            eventId;
 
 
-        if (stream_ != stream)
         {
+            std::lock_guard<std::mutex> lock(
+                stateMutex_
+            );
+
+
+            if (!stream_)
+            {
+                return;
+            }
+
+
+            /*
+             * Find the first pending event this stream has
+             * not seen yet.
+             *
+             * We intentionally stop at an undurable event.
+             * A later durable event is never allowed to
+             * overtake it.
+             */
+            for (const auto& candidate :
+                    order_)
+            {
+                if (!pending_.contains(
+                        candidate))
+                {
+                    continue;
+                }
+
+
+                if (sentOnCurrentStream_.contains(
+                        candidate))
+                {
+                    continue;
+                }
+
+
+                if (!durable_.contains(
+                        candidate))
+                {
+                    return;
+                }
+
+
+                auto iterator =
+                    pending_.find(
+                        candidate
+                    );
+
+
+                if (iterator
+                        == pending_.end())
+                {
+                    continue;
+                }
+
+
+                eventId =
+                    candidate;
+
+                message =
+                    iterator->second;
+
+                stream =
+                    stream_;
+
+                break;
+            }
+
+
+            if (eventId.empty())
+            {
+                return;
+            }
+        }
+
+
+        if (!stream->Write(
+                message))
+        {
+            std::cerr
+                << "[outbox] send failed for "
+                << eventId
+                << "; retaining for replay\n";
+
             return;
         }
-    }
 
 
-    if (!stream->Write(
-            message))
-    {
-        std::cerr
-            << "[outbox] send failed for "
-            << eventId
-            << "; retaining for replay\n";
+        {
+            std::lock_guard<std::mutex> lock(
+                stateMutex_
+            );
+
+
+            /*
+             * The connection could have changed while
+             * Write() was in progress. If so, the new stream
+             * still needs a replay of this event.
+             */
+            if (stream_ != stream)
+            {
+                return;
+            }
+
+
+            if (pending_.contains(
+                    eventId))
+            {
+                sentOnCurrentStream_.insert(
+                    eventId
+                );
+            }
+        }
     }
 }
+

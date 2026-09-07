@@ -100,9 +100,7 @@ private:
     void persistenceLoop();
 
 
-    void sendOne(
-        const std::string& eventId
-    );
+    void sendReadyEvents();
 
 
     std::filesystem::path
@@ -130,6 +128,17 @@ private:
      */
     std::unordered_set<std::string>
         durable_;
+
+
+    /*
+     * Events already written on the currently active
+     * gRPC stream.
+     *
+     * Cleared whenever the stream changes so reconnect
+     * naturally replays every pending durable event.
+     */
+    std::unordered_set<std::string>
+        sentOnCurrentStream_;
 
 
     std::deque<std::string>
