@@ -37,7 +37,10 @@ public class ForgeTask {
             joinColumns = @JoinColumn(name = "task_id")
     )
     @OrderColumn(name = "argument_index")
-    @Column(name = "argument_value")
+    @Column(
+            name = "argument_value",
+            columnDefinition = "TEXT"
+    )
     private List<String> arguments =
             new ArrayList<>();
 
