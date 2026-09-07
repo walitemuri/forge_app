@@ -121,6 +121,32 @@ def recovery_count(
     )
 
 
+def retired_count(
+        worker_id,
+        session_id):
+
+    worker = sql_escape(
+        worker_id
+    )
+
+    session = sql_escape(
+        session_id
+    )
+
+    value = db_scalar(
+        f"""
+        SELECT COUNT(*)
+        FROM retired_worker_sessions
+        WHERE worker_id = '{worker}'
+          AND session_id = '{session}';
+        """
+    )
+
+    return int(
+        value or "0"
+    )
+
+
 def get_worker(worker_id):
 
     workers = helpers.get(
@@ -382,6 +408,16 @@ def main():
         )
 
 
+    if retired_count(
+            worker_id,
+            session_a) != 0:
+
+        raise AssertionError(
+            "Current authoritative session A "
+            "is already marked retired"
+        )
+
+
     lock_process = None
     process_b = None
     replacement_ready = False
@@ -534,6 +570,20 @@ def main():
         )
 
 
+        visible_retirements = (
+            retired_count(
+                worker_id,
+                session_a
+            )
+        )
+
+
+        print(
+            "[OBSERVE] visible retired rows:",
+            visible_retirements,
+        )
+
+
         if (
             failure is None
             and visible_recoveries != 0
@@ -544,6 +594,19 @@ def main():
                 "the old-session recovery row "
                 "committed while the authority "
                 "transfer was still blocked"
+            )
+
+
+        if (
+            failure is None
+            and visible_retirements != 0
+        ):
+
+            failure = AssertionError(
+                "HALF-HANDOFF OBSERVED: "
+                "the old session became permanently "
+                "retired while the authority transfer "
+                "was still blocked"
             )
 
 
@@ -673,6 +736,10 @@ def main():
                         worker_id,
                         session_a
                     ) == 0
+                    and retired_count(
+                        worker_id,
+                        session_a
+                    ) == 0
                 )
 
 
@@ -693,6 +760,14 @@ def main():
             print(
                 "[VERIFY] recovery rows after abort:",
                 recovery_count(
+                    worker_id,
+                    session_a
+                ),
+            )
+
+            print(
+                "[VERIFY] retired rows after abort:",
+                retired_count(
                     worker_id,
                     session_a
                 ),
