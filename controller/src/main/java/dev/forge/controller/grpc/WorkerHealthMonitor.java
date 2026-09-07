@@ -51,8 +51,8 @@ public class WorkerHealthMonitor {
                         false
                 );
 
-                worker.setCommandStream(
-                        null
+                worker.disconnectCommandStream(
+                        "Worker heartbeat timed out"
                 );
 
 

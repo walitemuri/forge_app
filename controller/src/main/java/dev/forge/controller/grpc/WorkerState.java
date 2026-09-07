@@ -2,6 +2,7 @@ package dev.forge.controller.grpc;
 
 import dev.forge.proto.ControllerMessage;
 
+import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -157,6 +158,57 @@ public class WorkerState {
     public StreamObserver<ControllerMessage> getCommandStream() {
 
         return commandStream;
+    }
+
+
+    /*
+     * Force the currently installed command stream to end.
+     *
+     * Merely setting commandStream = null is not enough:
+     * the worker process can remain blocked in its gRPC Read()
+     * forever and therefore never enter its reconnect loop.
+     *
+     * Detach the stream first so an old stream callback cannot
+     * accidentally interfere with a later replacement stream.
+     */
+    public synchronized void disconnectCommandStream(
+            String reason) {
+
+        StreamObserver<ControllerMessage> stream =
+                commandStream;
+
+        commandStream = null;
+
+
+        if (stream == null) {
+            return;
+        }
+
+
+        try {
+
+            stream.onError(
+                    Status.UNAVAILABLE
+                            .withDescription(reason)
+                            .asRuntimeException()
+            );
+
+        }
+        catch (RuntimeException exception) {
+
+            /*
+             * The transport may already be closed.
+             *
+             * Our local state is still correct because the
+             * reference was cleared before attempting onError().
+             */
+            System.err.println(
+                    "Failed to close command stream for "
+                            + workerId
+                            + ": "
+                            + exception.getMessage()
+            );
+        }
     }
 
 
