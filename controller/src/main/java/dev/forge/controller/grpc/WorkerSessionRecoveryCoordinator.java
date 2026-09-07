@@ -4,9 +4,10 @@ import dev.forge.controller.task.WorkerFailureService;
 
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.time.Instant;
+import java.util.List;
 
 
 @Component
@@ -23,20 +24,23 @@ public class WorkerSessionRecoveryCoordinator {
     private final WorkerFailureService
             workerFailureService;
 
-
-    private final Map<SessionKey, Long>
-            pendingRecoveries =
-                    new ConcurrentHashMap<>();
+    private final WorkerSessionRecoveryRepository
+            recoveryRepository;
 
 
     public WorkerSessionRecoveryCoordinator(
-            WorkerFailureService workerFailureService) {
+            WorkerFailureService workerFailureService,
+            WorkerSessionRecoveryRepository recoveryRepository) {
 
         this.workerFailureService =
                 workerFailureService;
+
+        this.recoveryRepository =
+                recoveryRepository;
     }
 
 
+    @Transactional
     public void scheduleRecovery(
             String workerId,
             String sessionId) {
@@ -50,31 +54,51 @@ public class WorkerSessionRecoveryCoordinator {
         }
 
 
-        SessionKey key =
-                new SessionKey(
-                        workerId,
-                        sessionId
-                );
+        Instant recoverAfter =
+                Instant.now()
+                        .plusMillis(
+                                RECOVERY_GRACE_MS
+                        );
 
 
-        pendingRecoveries.put(
-                key,
-                System.currentTimeMillis()
-                        + RECOVERY_GRACE_MS
+        WorkerSessionRecovery recovery =
+                recoveryRepository
+                        .findByWorkerIdAndSessionId(
+                                workerId,
+                                sessionId
+                        )
+                        .orElseGet(
+                                () ->
+                                        new WorkerSessionRecovery(
+                                                workerId,
+                                                sessionId,
+                                                recoverAfter
+                                        )
+                        );
+
+
+        recovery.reschedule(
+                recoverAfter
+        );
+
+
+        recoveryRepository.save(
+                recovery
         );
 
 
         System.out.println(
-                "Scheduled worker-session recovery: worker="
+                "Scheduled DURABLE worker-session recovery: worker="
                         + workerId
                         + " session="
                         + sessionId
-                        + " graceMs="
-                        + RECOVERY_GRACE_MS
+                        + " recoverAfter="
+                        + recoverAfter
         );
     }
 
 
+    @Transactional
     public void cancelRecovery(
             String workerId,
             String sessionId) {
@@ -86,83 +110,109 @@ public class WorkerSessionRecoveryCoordinator {
         }
 
 
-        pendingRecoveries.remove(
-                new SessionKey(
+        recoveryRepository
+                .deleteByWorkerIdAndSessionId(
+                        workerId,
+                        sessionId
+                );
+    }
+
+
+    @Transactional(readOnly = true)
+    public boolean hasPendingRecovery(
+            String workerId,
+            String sessionId,
+            Instant now) {
+
+        if (workerId == null
+                || sessionId == null) {
+
+            return false;
+        }
+
+
+        return recoveryRepository
+                .findByWorkerIdAndSessionId(
                         workerId,
                         sessionId
                 )
-        );
+                .map(
+                        recovery ->
+                                recovery
+                                        .getRecoverAfter()
+                                        .isAfter(now)
+                )
+                .orElse(false);
     }
 
 
     @Scheduled(fixedRate = 1000)
+    @Transactional
     public void reconcileExpiredSessions() {
 
-        long now =
-                System.currentTimeMillis();
+        Instant now =
+                Instant.now();
 
 
-        for (Map.Entry<SessionKey, Long> entry :
-                pendingRecoveries.entrySet()) {
-
-            if (entry.getValue() > now) {
-
-                continue;
-            }
-
-
-            SessionKey key =
-                    entry.getKey();
+        List<WorkerSessionRecovery>
+                expiredRecoveries =
+                recoveryRepository
+                        .findByRecoverAfterLessThanEqualOrderByRecoverAfterAsc(
+                                now
+                        );
 
 
-            if (!pendingRecoveries.remove(
-                    key,
-                    entry.getValue())) {
-
-                continue;
-            }
-
+        for (WorkerSessionRecovery recovery :
+                expiredRecoveries) {
 
             WorkerState current =
                     WorkerRegistry.get(
-                            key.workerId()
+                            recovery.getWorkerId()
                     );
 
 
             /*
-             * The old session somehow became authoritative
-             * again before its grace period expired.
+             * The session became authoritative again before
+             * the persisted grace period expired.
              */
             if (current != null
                     && current.hasSession(
-                            key.sessionId()
+                            recovery.getSessionId()
                     )
                     && current.isOnline()
                     && current.hasCommandStream()) {
+
+                recoveryRepository.delete(
+                        recovery
+                );
 
                 continue;
             }
 
 
             System.out.println(
-                    "Worker-session replay grace expired: worker="
-                            + key.workerId()
+                    "Durable worker-session replay grace expired: worker="
+                            + recovery.getWorkerId()
                             + " session="
-                            + key.sessionId()
+                            + recovery.getSessionId()
             );
 
 
             workerFailureService
                     .handleWorkerSessionLost(
-                            key.workerId(),
-                            key.sessionId()
+                            recovery.getWorkerId(),
+                            recovery.getSessionId()
                     );
+
+
+            /*
+             * Delete only after recovery state changes have
+             * succeeded. Because this whole method is one
+             * transaction, a failure rolls back both sides.
+             */
+            recoveryRepository.delete(
+                    recovery
+            );
         }
-    }
-
-
-    private record SessionKey(
-            String workerId,
-            String sessionId) {
     }
 }

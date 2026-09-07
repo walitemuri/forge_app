@@ -2,11 +2,15 @@ package dev.forge.controller.task;
 
 import dev.forge.controller.event.ExecutionEventService;
 import dev.forge.controller.event.ExecutionEventType;
+import dev.forge.controller.grpc.WorkerSessionRecoveryCoordinator;
 
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -40,11 +44,16 @@ public class TaskRecoveryService {
     private final ExecutionEventService
             executionEventService;
 
+    private final WorkerSessionRecoveryCoordinator
+            workerSessionRecoveryCoordinator;
+
 
     public TaskRecoveryService(
             TaskRegistry taskRegistry,
             TaskAttemptRegistry taskAttemptRegistry,
-            ExecutionEventService executionEventService) {
+            ExecutionEventService executionEventService,
+            WorkerSessionRecoveryCoordinator
+                    workerSessionRecoveryCoordinator) {
 
         this.taskRegistry =
                 taskRegistry;
@@ -54,15 +63,18 @@ public class TaskRecoveryService {
 
         this.executionEventService =
                 executionEventService;
+
+        this.workerSessionRecoveryCoordinator =
+                workerSessionRecoveryCoordinator;
     }
 
 
     @Transactional
     public void recoverInterruptedTasks() {
 
-        // =========================================================
-        // CREATED → PENDING recovery
-        // =========================================================
+        // =====================================================
+        // CREATED -> PENDING recovery
+        // =====================================================
 
         List<ForgeTask> createdTasks =
                 taskRegistry.getByStatuses(
@@ -107,19 +119,15 @@ public class TaskRecoveryService {
         }
 
 
-        // =========================================================
+        // =====================================================
         // Find interrupted physical executions
-        // =========================================================
+        // =====================================================
 
         List<TaskAttempt> interruptedAttempts =
                 taskAttemptRegistry.getByStatuses(
                         INTERRUPTED_ATTEMPT_STATUSES
                 );
 
-
-        // =========================================================
-        // Find interrupted logical tasks
-        // =========================================================
 
         List<ForgeTask> interruptedTasks =
                 taskRegistry.getByStatuses(
@@ -138,21 +146,59 @@ public class TaskRecoveryService {
         }
 
 
-        System.out.println();
-        System.out.println(
-                "=== TASK RECOVERY ==="
-        );
+        Instant startupTime =
+                Instant.now();
 
 
-        // =========================================================
-        // Physical attempts → LOST
-        // =========================================================
+        Set<String> deferredAttemptIds =
+                new HashSet<>();
+
+
+        List<TaskAttempt> attemptsToLose =
+                new ArrayList<>();
+
+
+        // =====================================================
+        // Decide which attempts must be recovered immediately
+        // =====================================================
 
         for (TaskAttempt attempt :
                 interruptedAttempts) {
 
+            boolean hasPersistedGrace =
+                    attempt.getWorkerId() != null
+                            && attempt.getWorkerSessionId() != null
+                            && workerSessionRecoveryCoordinator
+                                    .hasPendingRecovery(
+                                            attempt.getWorkerId(),
+                                            attempt.getWorkerSessionId(),
+                                            startupTime
+                                    );
+
+
+            if (hasPersistedGrace) {
+
+                deferredAttemptIds.add(
+                        attempt.getId()
+                );
+
+
+                System.out.println(
+                        "Deferring startup recovery for attempt "
+                                + attempt.getId()
+                                + " worker="
+                                + attempt.getWorkerId()
+                                + " session="
+                                + attempt.getWorkerSessionId()
+                                + " because durable replay grace is active"
+                );
+
+                continue;
+            }
+
+
             System.out.println(
-                    "Marking attempt LOST: "
+                    "Marking attempt LOST during controller recovery: "
                             + attempt.getId()
                             + " task="
                             + attempt.getTaskId()
@@ -162,78 +208,64 @@ public class TaskRecoveryService {
                             + attempt.getStatus()
                             + " worker="
                             + attempt.getWorkerId()
+                            + " session="
+                            + attempt.getWorkerSessionId()
             );
 
 
             attempt.markLost();
+
+            attemptsToLose.add(
+                    attempt
+            );
         }
 
 
-        taskAttemptRegistry.saveAll(
-                interruptedAttempts
-        );
+        if (!attemptsToLose.isEmpty()) {
+
+            taskAttemptRegistry.saveAll(
+                    attemptsToLose
+            );
 
 
-        /*
-         * Record only AFTER the attempt state has
-         * been persisted.
-         */
-        for (TaskAttempt attempt :
-                interruptedAttempts) {
+            for (TaskAttempt attempt :
+                    attemptsToLose) {
 
-            ForgeTask task =
-                    taskRegistry.get(
-                            attempt.getTaskId()
-                    );
+                ForgeTask task =
+                        taskRegistry.get(
+                                attempt.getTaskId()
+                        );
 
 
-            if (task == null) {
+                if (task == null) {
 
-                continue;
+                    continue;
+                }
+
+
+                executionEventService.record(
+                        ExecutionEventType.ATTEMPT_LOST,
+                        task.getWorkflowId(),
+                        task.getId(),
+                        attempt.getId(),
+                        attempt.getWorkerId(),
+                        "Controller restarted while execution attempt was active"
+                );
             }
-
-
-            executionEventService.record(
-                    ExecutionEventType.ATTEMPT_LOST,
-                    task.getWorkflowId(),
-                    task.getId(),
-                    attempt.getId(),
-                    attempt.getWorkerId(),
-                    "Controller restarted while execution attempt was active"
-            );
         }
 
 
-        // =========================================================
-        // Logical tasks → LOST
-        // =========================================================
+        // =====================================================
+        // Logical task recovery
+        //
+        // A task whose CURRENT physical attempt has an active
+        // durable replay grace must remain in-flight.
+        // =====================================================
 
-        for (ForgeTask task :
-                interruptedTasks) {
-
-            System.out.println(
-                    "Marking task LOST: "
-                            + task.getId()
-                            + " previousStatus="
-                            + task.getStatus()
-                            + " worker="
-                            + task.getWorkerId()
-            );
+        List<ForgeTask> tasksToLose =
+                new ArrayList<>();
 
 
-            task.markLost();
-        }
-
-
-        taskRegistry.saveAll(
-                interruptedTasks
-        );
-
-
-        /*
-         * Again, persist the task state before writing
-         * the corresponding timeline event.
-         */
         for (ForgeTask task :
                 interruptedTasks) {
 
@@ -244,27 +276,90 @@ public class TaskRecoveryService {
                             );
 
 
-            executionEventService.record(
-                    ExecutionEventType.TASK_LOST,
-                    task.getWorkflowId(),
-                    task.getId(),
-                    latestAttempt == null
-                            ? null
-                            : latestAttempt.getId(),
-                    task.getWorkerId(),
-                    "Controller restarted while task was in flight"
+            if (latestAttempt != null
+                    && deferredAttemptIds.contains(
+                            latestAttempt.getId()
+                    )) {
+
+                System.out.println(
+                        "Deferring startup task recovery: "
+                                + task.getId()
+                                + " attempt="
+                                + latestAttempt.getId()
+                );
+
+                continue;
+            }
+
+
+            System.out.println(
+                    "Marking task LOST during controller recovery: "
+                            + task.getId()
+                            + " previousStatus="
+                            + task.getStatus()
+                            + " worker="
+                            + task.getWorkerId()
+            );
+
+
+            task.markLost();
+
+            tasksToLose.add(
+                    task
             );
         }
 
 
+        if (!tasksToLose.isEmpty()) {
+
+            taskRegistry.saveAll(
+                    tasksToLose
+            );
+
+
+            for (ForgeTask task :
+                    tasksToLose) {
+
+                TaskAttempt latestAttempt =
+                        taskAttemptRegistry
+                                .getLatestForTask(
+                                        task.getId()
+                                );
+
+
+                executionEventService.record(
+                        ExecutionEventType.TASK_LOST,
+                        task.getWorkflowId(),
+                        task.getId(),
+                        latestAttempt == null
+                                ? null
+                                : latestAttempt.getId(),
+                        task.getWorkerId(),
+                        "Controller restarted while task was in flight"
+                );
+            }
+        }
+
+
+        System.out.println();
         System.out.println(
-                "Recovered "
-                        + interruptedTasks.size()
-                        + " task(s) and "
-                        + interruptedAttempts.size()
-                        + " attempt(s)."
+                "=== TASK RECOVERY ==="
         );
 
+        System.out.println(
+                "Immediate LOST attempts: "
+                        + attemptsToLose.size()
+        );
+
+        System.out.println(
+                "Deferred by durable session grace: "
+                        + deferredAttemptIds.size()
+        );
+
+        System.out.println(
+                "Immediate LOST tasks: "
+                        + tasksToLose.size()
+        );
 
         System.out.println(
                 "====================="
