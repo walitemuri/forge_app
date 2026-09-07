@@ -42,6 +42,12 @@ public class ForgeControllerService
     private final WorkerTakeoverService
             workerTakeoverService;
 
+    private final WorkerSessionHistoryService
+            workerSessionHistoryService;
+
+    private final WorkerColdStartGrace
+            workerColdStartGrace;
+
 
     public ForgeControllerService(
             TaskRegistry taskRegistry,
@@ -52,7 +58,11 @@ public class ForgeControllerService
             WorkerAuthorityService
                     workerAuthorityService,
             WorkerTakeoverService
-                    workerTakeoverService) {
+                    workerTakeoverService,
+            WorkerSessionHistoryService
+                    workerSessionHistoryService,
+            WorkerColdStartGrace
+                    workerColdStartGrace) {
 
         this.taskRegistry = taskRegistry;
         this.taskAttemptRegistry = taskAttemptRegistry;
@@ -65,6 +75,12 @@ public class ForgeControllerService
 
         this.workerTakeoverService =
                 workerTakeoverService;
+
+        this.workerSessionHistoryService =
+                workerSessionHistoryService;
+
+        this.workerColdStartGrace =
+                workerColdStartGrace;
     }
 
 
@@ -95,6 +111,52 @@ public class ForgeControllerService
                         .getAuthoritativeSession(
                                 workerId
                         );
+
+
+        /*
+         * A session that previously lost authority must never
+         * later qualify as a fresh worker incarnation.
+         *
+         * The current authoritative session wins if the
+         * database were ever inconsistent enough to contain it
+         * in both places.
+         */
+        if (durableSession != null
+                && !durableSession.equals(
+                        sessionId
+                )
+                && workerSessionHistoryService
+                        .isRetired(
+                                workerId,
+                                sessionId
+                        )) {
+
+            System.err.println(
+                    "FENCED permanently retired worker session: worker="
+                            + workerId
+                            + " session="
+                            + sessionId
+            );
+
+
+            RegisterWorkerResponse response =
+                    RegisterWorkerResponse
+                            .newBuilder()
+                            .setAccepted(false)
+                            .setMessage(
+                                    "Worker session has been permanently retired"
+                            )
+                            .build();
+
+
+            responseObserver.onNext(
+                    response
+            );
+
+            responseObserver.onCompleted();
+
+            return;
+        }
 
 
         // =====================================================
@@ -298,42 +360,103 @@ public class ForgeControllerService
             }
 
             /*
-             * Controller restarted and remembers the authority
-             * decision from PostgreSQL.
+             * Controller restarted with a durable authority but
+             * no in-memory WorkerState yet.
              *
-             * Only that exact process incarnation may restore
-             * this stable worker ID.
+             * First give the persisted process incarnation time
+             * to reconnect.
              */
             else if (!durableSession.equals(
                     sessionId)) {
 
-                System.err.println(
-                        "FENCED stale worker after controller restart: worker="
+                if (workerColdStartGrace
+                        .isActive()) {
+
+                    System.out.println(
+                            "Deferring cold-start worker takeover: worker="
+                                    + workerId
+                                    + " authoritativeSession="
+                                    + durableSession
+                                    + " requestedSession="
+                                    + sessionId
+                                    + " remainingGraceMs="
+                                    + workerColdStartGrace
+                                            .remainingMillis()
+                    );
+
+
+                    RegisterWorkerResponse response =
+                            RegisterWorkerResponse
+                                    .newBuilder()
+                                    .setAccepted(false)
+                                    .setMessage(
+                                            "Waiting for persisted worker authority to reconnect"
+                                    )
+                                    .build();
+
+
+                    responseObserver.onNext(
+                            response
+                    );
+
+                    responseObserver.onCompleted();
+
+                    return;
+                }
+
+
+                /*
+                 * The persisted authority did not reconnect
+                 * during controller-start grace.
+                 *
+                 * The new session has already passed the
+                 * permanent retired-session check above, so it
+                 * may now atomically supersede the absent owner.
+                 */
+                try {
+
+                    workerTakeoverService
+                            .takeover(
+                                    workerId,
+                                    durableSession,
+                                    sessionId
+                            );
+
+                }
+                catch (WorkerTakeoverConflictException exc) {
+
+                    RegisterWorkerResponse response =
+                            RegisterWorkerResponse
+                                    .newBuilder()
+                                    .setAccepted(false)
+                                    .setMessage(
+                                            "Worker authority changed concurrently"
+                                    )
+                                    .build();
+
+
+                    responseObserver.onNext(
+                            response
+                    );
+
+                    responseObserver.onCompleted();
+
+                    return;
+                }
+
+
+                System.out.println(
+                        "Cold-start worker authority takeover: worker="
                                 + workerId
-                                + " authoritativeSession="
+                                + " oldSession="
                                 + durableSession
-                                + " rejectedSession="
+                                + " newSession="
                                 + sessionId
                 );
 
 
-                RegisterWorkerResponse response =
-                        RegisterWorkerResponse
-                                .newBuilder()
-                                .setAccepted(false)
-                                .setMessage(
-                                        "Worker session is stale; another session is durably authoritative"
-                                )
-                                .build();
-
-
-                responseObserver.onNext(
-                        response
-                );
-
-                responseObserver.onCompleted();
-
-                return;
+                durableSession =
+                        sessionId;
             }
         }
 

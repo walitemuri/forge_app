@@ -13,18 +13,26 @@ public class WorkerTakeoverService {
     private final WorkerAuthorityService
             authorityService;
 
+    private final WorkerSessionHistoryService
+            sessionHistoryService;
+
 
     public WorkerTakeoverService(
             WorkerSessionRecoveryCoordinator
                     recoveryCoordinator,
             WorkerAuthorityService
-                    authorityService) {
+                    authorityService,
+            WorkerSessionHistoryService
+                    sessionHistoryService) {
 
         this.recoveryCoordinator =
                 recoveryCoordinator;
 
         this.authorityService =
                 authorityService;
+
+        this.sessionHistoryService =
+                sessionHistoryService;
     }
 
 
@@ -51,6 +59,18 @@ public class WorkerTakeoverService {
 
         recoveryCoordinator
                 .scheduleRecovery(
+                        workerId,
+                        oldSessionId
+                );
+
+
+        /*
+         * A superseded process incarnation is permanently
+         * stale. Keep that fact even after recovery grace has
+         * expired and been deleted.
+         */
+        sessionHistoryService
+                .retire(
                         workerId,
                         oldSessionId
                 );
