@@ -32,8 +32,12 @@ public class ForgeControllerService
     private final TaskAttemptRegistry taskAttemptRegistry;
 
     private final ExecutionEventService executionEventService;
+
     private final WorkerSessionRecoveryCoordinator
             workerSessionRecoveryCoordinator;
+
+    private final WorkerAuthorityService
+            workerAuthorityService;
 
 
     public ForgeControllerService(
@@ -41,13 +45,18 @@ public class ForgeControllerService
             TaskAttemptRegistry taskAttemptRegistry,
             ExecutionEventService executionEventService,
             WorkerSessionRecoveryCoordinator
-                    workerSessionRecoveryCoordinator) {
+                    workerSessionRecoveryCoordinator,
+            WorkerAuthorityService
+                    workerAuthorityService) {
 
         this.taskRegistry = taskRegistry;
         this.taskAttemptRegistry = taskAttemptRegistry;
         this.executionEventService = executionEventService;
         this.workerSessionRecoveryCoordinator =
                 workerSessionRecoveryCoordinator;
+
+        this.workerAuthorityService =
+                workerAuthorityService;
     }
 
 
@@ -60,28 +69,108 @@ public class ForgeControllerService
             RegisterWorkerRequest request,
             StreamObserver<RegisterWorkerResponse> responseObserver) {
 
+        String workerId =
+                request.getWorkerId();
+
+        String sessionId =
+                request.getSessionId();
+
+
         WorkerState existing =
                 WorkerRegistry.get(
-                        request.getWorkerId()
+                        workerId
                 );
 
 
-        /*
-         * Same worker process reconnecting.
-         *
-         * Preserve reservations and current state instead of
-         * replacing WorkerState with a fresh object.
-         */
+        String durableSession =
+                workerAuthorityService
+                        .getAuthoritativeSession(
+                                workerId
+                        );
+
+
+        // =====================================================
+        // Same-session reconnect
+        // =====================================================
+
         if (existing != null
                 && existing.hasSession(
-                        request.getSessionId()
+                        sessionId
                 )) {
+
+            /*
+             * A WorkerState should never disagree with durable
+             * authority.
+             *
+             * The null case is permitted for the one-time
+             * migration from the pre-V19 controller.
+             */
+            if (durableSession == null) {
+
+                if (!workerAuthorityService
+                        .claimIfUnowned(
+                                workerId,
+                                sessionId
+                        )) {
+
+                    RegisterWorkerResponse response =
+                            RegisterWorkerResponse
+                                    .newBuilder()
+                                    .setAccepted(false)
+                                    .setMessage(
+                                            "Worker authority is owned by another session"
+                                    )
+                                    .build();
+
+                    responseObserver.onNext(
+                            response
+                    );
+
+                    responseObserver.onCompleted();
+
+                    return;
+                }
+            }
+            else if (!durableSession.equals(
+                    sessionId)) {
+
+                System.err.println(
+                        "FENCED worker registration because "
+                                + "durable authority disagrees "
+                                + "with in-memory state: worker="
+                                + workerId
+                                + " durableSession="
+                                + durableSession
+                                + " requestedSession="
+                                + sessionId
+                );
+
+
+                RegisterWorkerResponse response =
+                        RegisterWorkerResponse
+                                .newBuilder()
+                                .setAccepted(false)
+                                .setMessage(
+                                        "Worker session is not durably authoritative"
+                                )
+                                .build();
+
+                responseObserver.onNext(
+                        response
+                );
+
+                responseObserver.onCompleted();
+
+                return;
+            }
+
 
             workerSessionRecoveryCoordinator
                     .cancelRecovery(
-                            request.getWorkerId(),
-                            request.getSessionId()
+                            workerId,
+                            sessionId
                     );
+
 
             existing.refreshRegistration();
 
@@ -106,24 +195,21 @@ public class ForgeControllerService
         }
 
 
-        /*
-         * Another process is already actively controlling this
-         * stable worker ID.
-         *
-         * Do NOT let a second process steal ownership while the
-         * first still has a live command stream.
-         */
+        // =====================================================
+        // A different LIVE session already owns this worker ID
+        // =====================================================
+
         if (existing != null
                 && existing.isOnline()
                 && existing.hasCommandStream()) {
 
             System.err.println(
                     "FENCED duplicate worker registration: worker="
-                            + request.getWorkerId()
+                            + workerId
                             + " activeSession="
                             + existing.getSessionId()
                             + " rejectedSession="
-                            + request.getSessionId()
+                            + sessionId
             );
 
 
@@ -147,39 +233,262 @@ public class ForgeControllerService
         }
 
 
-        /*
-         * Different session, but the previous incarnation no
-         * longer owns a live command stream.
-         *
-         * IMPORTANT:
-         *
-         * Do NOT mark its attempts LOST here.
-         *
-         * The replacement process may have loaded a durable
-         * TaskAccepted/TaskResult from the previous process's
-         * disk outbox. It must get a chance to replay that event
-         * before Forge decides the old execution is lost.
-         *
-         * Session-specific attempt ownership will be added in
-         * the next step.
-         */
-        if (existing != null) {
+        // =====================================================
+        // Registry empty
+        //
+        // This is the critical controller-restart case.
+        // =====================================================
+
+        if (existing == null) {
+
+            /*
+             * Brand-new stable worker ID.
+             */
+            if (durableSession == null) {
+
+                if (!workerAuthorityService
+                        .claimIfUnowned(
+                                workerId,
+                                sessionId
+                        )) {
+
+                    String winner =
+                            workerAuthorityService
+                                    .getAuthoritativeSession(
+                                            workerId
+                                    );
+
+
+                    System.err.println(
+                            "FENCED initial worker registration race: worker="
+                                    + workerId
+                                    + " winner="
+                                    + winner
+                                    + " rejectedSession="
+                                    + sessionId
+                    );
+
+
+                    RegisterWorkerResponse response =
+                            RegisterWorkerResponse
+                                    .newBuilder()
+                                    .setAccepted(false)
+                                    .setMessage(
+                                            "Worker authority was claimed by another session"
+                                    )
+                                    .build();
+
+
+                    responseObserver.onNext(
+                            response
+                    );
+
+                    responseObserver.onCompleted();
+
+                    return;
+                }
+            }
+
+            /*
+             * Controller restarted and remembers the authority
+             * decision from PostgreSQL.
+             *
+             * Only that exact process incarnation may restore
+             * this stable worker ID.
+             */
+            else if (!durableSession.equals(
+                    sessionId)) {
+
+                System.err.println(
+                        "FENCED stale worker after controller restart: worker="
+                                + workerId
+                                + " authoritativeSession="
+                                + durableSession
+                                + " rejectedSession="
+                                + sessionId
+                );
+
+
+                RegisterWorkerResponse response =
+                        RegisterWorkerResponse
+                                .newBuilder()
+                                .setAccepted(false)
+                                .setMessage(
+                                        "Worker session is stale; another session is durably authoritative"
+                                )
+                                .build();
+
+
+                responseObserver.onNext(
+                        response
+                );
+
+                responseObserver.onCompleted();
+
+                return;
+            }
+        }
+
+
+        // =====================================================
+        // Different session taking over an OFFLINE WorkerState
+        // =====================================================
+
+        else {
+
+            String oldSession =
+                    existing.getSessionId();
+
+
+            /*
+             * Migration safety: if the running controller has an
+             * old WorkerState but V19 has no durable row yet,
+             * initialize authority to that currently known owner
+             * before attempting a transfer.
+             */
+            if (durableSession == null) {
+
+                if (!workerAuthorityService
+                        .claimIfUnowned(
+                                workerId,
+                                oldSession
+                        )) {
+
+                    RegisterWorkerResponse response =
+                            RegisterWorkerResponse
+                                    .newBuilder()
+                                    .setAccepted(false)
+                                    .setMessage(
+                                            "Unable to establish previous worker authority"
+                                    )
+                                    .build();
+
+
+                    responseObserver.onNext(
+                            response
+                    );
+
+                    responseObserver.onCompleted();
+
+                    return;
+                }
+
+
+                durableSession =
+                        workerAuthorityService
+                                .getAuthoritativeSession(
+                                        workerId
+                                );
+            }
+
+
+            /*
+             * Never transfer authority from an in-memory owner
+             * that PostgreSQL no longer recognizes.
+             */
+            if (!oldSession.equals(
+                    durableSession)) {
+
+                System.err.println(
+                        "FENCED takeover from non-authoritative "
+                                + "in-memory session: worker="
+                                + workerId
+                                + " inMemorySession="
+                                + oldSession
+                                + " durableSession="
+                                + durableSession
+                                + " requestedSession="
+                                + sessionId
+                );
+
+
+                RegisterWorkerResponse response =
+                        RegisterWorkerResponse
+                                .newBuilder()
+                                .setAccepted(false)
+                                .setMessage(
+                                        "Existing worker session is not the durable authority"
+                                )
+                                .build();
+
+
+                responseObserver.onNext(
+                        response
+                );
+
+                responseObserver.onCompleted();
+
+                return;
+            }
+
 
             System.out.println(
                     "Worker session takeover: worker="
-                            + request.getWorkerId()
+                            + workerId
                             + " oldSession="
-                            + existing.getSessionId()
+                            + oldSession
                             + " newSession="
-                            + request.getSessionId()
+                            + sessionId
             );
 
 
+            /*
+             * Persist replay grace FIRST.
+             *
+             * If Forge crashes here, authority still belongs to A
+             * and A's grace row exists. That state is recoverable.
+             */
             workerSessionRecoveryCoordinator
                     .scheduleRecovery(
-                            existing.getWorkerId(),
-                            existing.getSessionId()
+                            workerId,
+                            oldSession
                     );
+
+
+            /*
+             * Atomic durable fencing decision:
+             *
+             *     A -> B
+             *
+             * only if PostgreSQL STILL says A.
+             */
+            if (!workerAuthorityService
+                    .transferAuthority(
+                            workerId,
+                            oldSession,
+                            sessionId
+                    )) {
+
+                System.err.println(
+                        "FENCED worker takeover because authority "
+                                + "changed concurrently: worker="
+                                + workerId
+                                + " expectedSession="
+                                + oldSession
+                                + " requestedSession="
+                                + sessionId
+                );
+
+
+                RegisterWorkerResponse response =
+                        RegisterWorkerResponse
+                                .newBuilder()
+                                .setAccepted(false)
+                                .setMessage(
+                                        "Worker authority changed concurrently"
+                                )
+                                .build();
+
+
+                responseObserver.onNext(
+                        response
+                );
+
+                responseObserver.onCompleted();
+
+                return;
+            }
+
 
             existing.setOnline(
                     false
@@ -191,36 +500,79 @@ public class ForgeControllerService
         }
 
 
-        WorkerState worker = new WorkerState(
-                request.getWorkerId(),
-                request.getSessionId(),
-                request.getHostname(),
-                request.getCpuCores(),
-                request.getMemoryBytes(),
-                request.getOperatingSystem()
-        );
+        // =====================================================
+        // Registration accepted
+        // =====================================================
+
+        WorkerState worker =
+                new WorkerState(
+                        workerId,
+                        sessionId,
+                        request.getHostname(),
+                        request.getCpuCores(),
+                        request.getMemoryBytes(),
+                        request.getOperatingSystem()
+                );
 
 
         WorkerRegistry.register(
                 worker
         );
 
+
+        /*
+         * If this exact session had an obsolete recovery row
+         * from some prior lifecycle, it is authoritative again
+         * and that row must not later mark its work LOST.
+         */
         workerSessionRecoveryCoordinator
                 .cancelRecovery(
-                        request.getWorkerId(),
-                        request.getSessionId()
+                        workerId,
+                        sessionId
                 );
 
 
         System.out.println();
-        System.out.println("=== WORKER REGISTERED ===");
-        System.out.println("ID:       " + request.getWorkerId());
-        System.out.println("Session:  " + request.getSessionId());
-        System.out.println("Hostname: " + request.getHostname());
-        System.out.println("CPU:      " + request.getCpuCores() + " cores");
-        System.out.println("Memory:   " + request.getMemoryBytes() + " bytes");
-        System.out.println("OS:       " + request.getOperatingSystem());
-        System.out.println("=========================");
+        System.out.println(
+                "=== WORKER REGISTERED ==="
+        );
+
+        System.out.println(
+                "ID:       "
+                        + workerId
+        );
+
+        System.out.println(
+                "Session:  "
+                        + sessionId
+        );
+
+        System.out.println(
+                "Hostname: "
+                        + request.getHostname()
+        );
+
+        System.out.println(
+                "CPU:      "
+                        + request.getCpuCores()
+                        + " cores"
+        );
+
+        System.out.println(
+                "Memory:   "
+                        + request.getMemoryBytes()
+                        + " bytes"
+        );
+
+        System.out.println(
+                "OS:       "
+                        + request.getOperatingSystem()
+        );
+
+        System.out.println(
+                "========================="
+        );
+
         System.out.println();
 
 
