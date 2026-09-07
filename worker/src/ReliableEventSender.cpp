@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <cctype>
 #include <cstring>
 #include <fstream>
@@ -240,6 +241,35 @@ ReliableEventSender::ReliableEventSender(
         << " pending="
         << pendingCount()
         << "\n";
+
+
+    persistenceThread_ =
+        std::thread(
+            &ReliableEventSender::persistenceLoop,
+            this
+        );
+}
+
+
+ReliableEventSender::~ReliableEventSender()
+{
+    {
+        std::lock_guard<std::mutex> lock(
+            stateMutex_
+        );
+
+        stopping_ =
+            true;
+    }
+
+
+    persistenceCondition_.notify_all();
+
+
+    if (persistenceThread_.joinable())
+    {
+        persistenceThread_.join();
+    }
 }
 
 
@@ -384,6 +414,11 @@ void ReliableEventSender::loadPersistedEvents()
         order_.push_back(
             eventId
         );
+
+
+        durable_.insert(
+            eventId
+        );
     }
 
 
@@ -508,7 +543,15 @@ bool ReliableEventSender::persistEvent(
                 error
             );
 
-            return true;
+
+            /*
+             * The event name exists, but make sure the
+             * directory metadata is durable before treating
+             * this event as safely persisted.
+             */
+            return syncDirectory(
+                storageDirectory_
+            );
         }
 
 
@@ -729,6 +772,216 @@ void ReliableEventSender::clearStream(
 }
 
 
+bool ReliableEventSender::tryPersistPending(
+        const std::string& eventId)
+{
+    forge::v1::WorkerMessage
+        message;
+
+
+    {
+        std::lock_guard<std::mutex> lock(
+            stateMutex_
+        );
+
+
+        auto iterator =
+            pending_.find(
+                eventId
+            );
+
+
+        if (iterator
+                == pending_.end())
+        {
+            return false;
+        }
+
+
+        if (durable_.contains(
+                eventId))
+        {
+            return true;
+        }
+
+
+        message =
+            iterator->second;
+    }
+
+
+    /*
+     * Disk I/O happens outside stateMutex_ so ACK handling,
+     * stream replacement, and queue inspection are not
+     * blocked by a slow filesystem.
+     */
+    if (!persistEvent(
+            eventId,
+            message))
+    {
+        return false;
+    }
+
+
+    {
+        std::lock_guard<std::mutex> lock(
+            stateMutex_
+        );
+
+
+        /*
+         * The event should still exist because an
+         * undurable event is never sent and therefore
+         * cannot normally be ACKed.
+         */
+        if (!pending_.contains(
+                eventId))
+        {
+            return false;
+        }
+
+
+        durable_.insert(
+            eventId
+        );
+    }
+
+
+    std::cout
+        << "[outbox] durable "
+        << eventId
+        << "\n";
+
+
+    return true;
+}
+
+
+bool ReliableEventSender::hasUndurablePendingLocked() const
+{
+    for (const auto& eventId :
+            order_)
+    {
+        if (pending_.contains(
+                eventId)
+                && !durable_.contains(
+                    eventId))
+        {
+            return true;
+        }
+    }
+
+
+    return false;
+}
+
+
+void ReliableEventSender::persistenceLoop()
+{
+    while (true)
+    {
+        std::vector<std::string>
+            retryIds;
+
+
+        {
+            std::unique_lock<std::mutex> lock(
+                stateMutex_
+            );
+
+
+            persistenceCondition_.wait(
+                lock,
+                [this]
+                {
+                    return stopping_
+                        || hasUndurablePendingLocked();
+                }
+            );
+
+
+            if (stopping_)
+            {
+                return;
+            }
+
+
+            for (const auto& eventId :
+                    order_)
+            {
+                if (pending_.contains(
+                        eventId)
+                        && !durable_.contains(
+                            eventId))
+                {
+                    retryIds.push_back(
+                        eventId
+                    );
+                }
+            }
+        }
+
+
+        bool persistenceFailed =
+            false;
+
+
+        /*
+         * Preserve queue order. In particular, this keeps
+         * TaskAccepted ahead of TaskResult for one attempt.
+         */
+        for (const auto& eventId :
+                retryIds)
+        {
+            if (tryPersistPending(
+                    eventId))
+            {
+                sendOne(
+                    eventId
+                );
+            }
+            else
+            {
+                persistenceFailed =
+                    true;
+
+
+                std::cerr
+                    << "[outbox] persistence retry failed for "
+                    << eventId
+                    << "; event remains unsent\n";
+            }
+        }
+
+
+        if (persistenceFailed)
+        {
+            /*
+             * Avoid spinning if the disk remains unavailable.
+             *
+             * A newly queued event may notify us sooner;
+             * otherwise retry roughly once per second.
+             */
+            std::unique_lock<std::mutex> lock(
+                stateMutex_
+            );
+
+
+            if (stopping_)
+            {
+                return;
+            }
+
+
+            persistenceCondition_.wait_for(
+                lock,
+                std::chrono::seconds(1)
+            );
+        }
+    }
+}
+
+
 void ReliableEventSender::enqueue(
         const std::string& eventId,
         forge::v1::WorkerMessage message)
@@ -747,23 +1000,11 @@ void ReliableEventSender::enqueue(
 
 
         /*
-         * Durable-before-visible.
+         * First retain the event in memory.
          *
-         * Do not make the event eligible for sending
-         * until its disk copy exists.
+         * It is NOT eligible for transmission until
+         * durable_ contains its event ID.
          */
-        if (!persistEvent(
-                eventId,
-                message))
-        {
-            std::cerr
-                << "[outbox] WARNING: durability could not "
-                << "be confirmed for event "
-                << eventId
-                << "; continuing with in-memory delivery only\n";
-        }
-
-
         pending_.emplace(
             eventId,
             std::move(message)
@@ -776,10 +1017,31 @@ void ReliableEventSender::enqueue(
     }
 
 
-    sendOne(
-        eventId
-    );
+    /*
+     * Fast path: try persistence immediately so normal
+     * event latency remains essentially unchanged.
+     */
+    if (tryPersistPending(
+            eventId))
+    {
+        sendOne(
+            eventId
+        );
+
+        return;
+    }
+
+
+    std::cerr
+        << "[outbox] durability unavailable for "
+        << eventId
+        << "; retaining event in memory and withholding "
+        << "gRPC delivery until persistence succeeds\n";
+
+
+    persistenceCondition_.notify_one();
 }
+
 
 
 void ReliableEventSender::acknowledge(
@@ -811,6 +1073,11 @@ void ReliableEventSender::acknowledge(
 
 
         pending_.erase(
+            eventId
+        );
+
+
+        durable_.erase(
             eventId
         );
 
@@ -875,7 +1142,9 @@ void ReliableEventSender::sendOne(
 
         if (iterator
                 == pending_.end()
-                || !stream_)
+                || !stream_
+                || !durable_.contains(
+                    eventId))
         {
             return;
         }

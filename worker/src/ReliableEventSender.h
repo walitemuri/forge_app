@@ -3,12 +3,15 @@
 #include <grpcpp/grpcpp.h>
 
 #include <cstddef>
+#include <condition_variable>
 #include <deque>
 #include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "forge.grpc.pb.h"
 
@@ -27,6 +30,8 @@ public:
     explicit ReliableEventSender(
         std::filesystem::path storageDirectory
     );
+
+    ~ReliableEventSender();
 
 
     void setStream(
@@ -84,6 +89,17 @@ private:
     );
 
 
+    bool tryPersistPending(
+        const std::string& eventId
+    );
+
+
+    bool hasUndurablePendingLocked() const;
+
+
+    void persistenceLoop();
+
+
     void sendOne(
         const std::string& eventId
     );
@@ -108,6 +124,24 @@ private:
     > pending_;
 
 
+    /*
+     * Event IDs whose .event file has passed the
+     * durable persistence barrier.
+     */
+    std::unordered_set<std::string>
+        durable_;
+
+
     std::deque<std::string>
         order_;
+
+
+    std::condition_variable
+        persistenceCondition_;
+
+    std::thread
+        persistenceThread_;
+
+    bool stopping_ =
+        false;
 };
