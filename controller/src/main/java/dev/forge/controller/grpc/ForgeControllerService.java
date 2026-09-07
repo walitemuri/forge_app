@@ -23,6 +23,8 @@ import io.grpc.stub.StreamObserver;
 
 import org.springframework.stereotype.Component;
 
+import java.util.concurrent.ConcurrentHashMap;
+
 
 @Component
 public class ForgeControllerService
@@ -47,6 +49,24 @@ public class ForgeControllerService
 
     private final WorkerColdStartGrace
             workerColdStartGrace;
+
+
+    /*
+     * Registration is a multi-step ownership decision:
+     *
+     *     WorkerRegistry read
+     *     durable authority read / CAS
+     *     WorkerRegistry write
+     *
+     * Concurrent registrations for the SAME stable worker ID
+     * must therefore execute as one critical section.
+     *
+     * Different worker IDs get different lock objects and can
+     * still register concurrently.
+     */
+    private final ConcurrentHashMap<String, Object>
+            workerRegistrationLocks =
+            new ConcurrentHashMap<>();
 
 
     public ForgeControllerService(
@@ -90,6 +110,37 @@ public class ForgeControllerService
 
     @Override
     public void registerWorker(
+            RegisterWorkerRequest request,
+            StreamObserver<RegisterWorkerResponse> responseObserver) {
+
+        String workerId =
+                request.getWorkerId();
+
+
+        Object registrationLock =
+                workerRegistrationLocks
+                        .computeIfAbsent(
+                                workerId,
+                                ignored ->
+                                        new Object()
+                        );
+
+
+        synchronized (registrationLock) {
+
+            registerWorkerLocked(
+                    request,
+                    responseObserver
+            );
+        }
+    }
+
+
+    /*
+     * Must only be entered while holding this worker ID's
+     * registration lock.
+     */
+    private void registerWorkerLocked(
             RegisterWorkerRequest request,
             StreamObserver<RegisterWorkerResponse> responseObserver) {
 
