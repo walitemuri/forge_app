@@ -4,14 +4,12 @@ import {
   Boxes,
   CircleCheck,
   CircleX,
+  LayoutTemplate,
   Workflow,
 } from "lucide-react";
 
 import { forgeFetch } from "@/lib/forge";
-import type {
-  ForgeWorker,
-  ForgeWorkflow,
-} from "@/lib/types";
+import type { ForgeWorker, ForgeWorkflow } from "@/lib/types";
 
 function statusClasses(status: string) {
   switch (status) {
@@ -36,11 +34,7 @@ function statusClasses(status: string) {
   }
 }
 
-function StatusBadge({
-  status,
-}: {
-  status: string;
-}) {
+function StatusBadge({ status }: { status: string }) {
   return (
     <span
       className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusClasses(
@@ -53,26 +47,16 @@ function StatusBadge({
 }
 
 async function loadData() {
-  const [workersResult, workflowsResult] =
-    await Promise.allSettled([
-      forgeFetch<ForgeWorker[]>(
-        "/api/workers",
-      ),
-      forgeFetch<ForgeWorkflow[]>(
-        "/api/workflows",
-      ),
-    ]);
+  const [workersResult, workflowsResult] = await Promise.allSettled([
+    forgeFetch<ForgeWorker[]>("/api/workers"),
+    forgeFetch<ForgeWorkflow[]>("/api/workflows"),
+  ]);
 
   return {
-    workers:
-      workersResult.status === "fulfilled"
-        ? workersResult.value
-        : [],
+    workers: workersResult.status === "fulfilled" ? workersResult.value : [],
 
     workflows:
-      workflowsResult.status === "fulfilled"
-        ? workflowsResult.value
-        : [],
+      workflowsResult.status === "fulfilled" ? workflowsResult.value : [],
 
     controllerOnline:
       workersResult.status === "fulfilled" ||
@@ -81,24 +65,13 @@ async function loadData() {
 }
 
 export default async function Home() {
-  const {
-    workers,
-    workflows,
-    controllerOnline,
-  } = await loadData();
+  const { workers, workflows, controllerOnline } = await loadData();
 
-  const onlineWorkers = workers.filter(
-    (worker) => worker.online,
+  const onlineWorkers = workers.filter((worker) => worker.online).length;
+
+  const activeWorkflows = workflows.filter((workflow) =>
+    ["CREATED", "PENDING", "RUNNING"].includes(workflow.status),
   ).length;
-
-  const activeWorkflows =
-    workflows.filter((workflow) =>
-      [
-        "CREATED",
-        "PENDING",
-        "RUNNING",
-      ].includes(workflow.status),
-    ).length;
 
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100">
@@ -108,9 +81,7 @@ export default async function Home() {
             <div className="mb-2 flex items-center gap-2">
               <Boxes className="h-5 w-5 text-zinc-400" />
 
-              <span className="text-sm font-medium text-zinc-400">
-                Forge
-              </span>
+              <span className="text-sm font-medium text-zinc-400">Forge</span>
             </div>
 
             <h1 className="text-3xl font-semibold tracking-tight">
@@ -122,19 +93,26 @@ export default async function Home() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2">
-            {controllerOnline ? (
-              <CircleCheck className="h-4 w-4 text-emerald-400" />
-            ) : (
-              <CircleX className="h-4 w-4 text-red-400" />
-            )}
+          <div className="flex items-center gap-3">
+            <Link
+              href="/templates"
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-400 transition hover:border-zinc-700 hover:text-zinc-100"
+            >
+              <LayoutTemplate className="h-4 w-4" />
+              Templates
+            </Link>
 
-            <span className="text-sm text-zinc-300">
-              Controller{" "}
-              {controllerOnline
-                ? "online"
-                : "offline"}
-            </span>
+            <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2">
+              {controllerOnline ? (
+                <CircleCheck className="h-4 w-4 text-emerald-400" />
+              ) : (
+                <CircleX className="h-4 w-4 text-red-400" />
+              )}
+
+              <span className="text-sm text-zinc-300">
+                Controller {controllerOnline ? "online" : "offline"}
+              </span>
+            </div>
           </div>
         </header>
 
@@ -161,9 +139,7 @@ export default async function Home() {
         <div className="grid gap-6 lg:grid-cols-2">
           <section className="rounded-xl border border-zinc-800 bg-zinc-950">
             <div className="border-b border-zinc-800 px-5 py-4">
-              <h2 className="font-medium">
-                Workers
-              </h2>
+              <h2 className="font-medium">Workers</h2>
 
               <p className="mt-1 text-xs text-zinc-500">
                 Connected execution agents
@@ -192,11 +168,7 @@ export default async function Home() {
                     </div>
 
                     <StatusBadge
-                      status={
-                        worker.online
-                          ? "ONLINE"
-                          : "OFFLINE"
-                      }
+                      status={worker.online ? "ONLINE" : "OFFLINE"}
                     />
                   </div>
                 ))
@@ -206,9 +178,7 @@ export default async function Home() {
 
           <section className="rounded-xl border border-zinc-800 bg-zinc-950">
             <div className="border-b border-zinc-800 px-5 py-4">
-              <h2 className="font-medium">
-                Recent Workflows
-              </h2>
+              <h2 className="font-medium">Recent Workflows</h2>
 
               <p className="mt-1 text-xs text-zinc-500">
                 Durable workflow executions
@@ -219,34 +189,27 @@ export default async function Home() {
               {workflows.length === 0 ? (
                 <EmptyState text="No workflows yet" />
               ) : (
-                workflows
-                  .slice(0, 8)
-                  .map((workflow) => (
-                    <div
-                      key={workflow.id}
-                      className="flex items-center justify-between px-5 py-4"
-                    >
-                      <div>
-                        <Link
-                          href={`/workflows/${workflow.id}`}
-                          className="text-sm text-zinc-200 transition hover:text-white hover:underline"
-                        >
-                          {workflow.name ??
-                            `Workflow ${workflow.id}`}
-                        </Link>
+                workflows.slice(0, 8).map((workflow) => (
+                  <div
+                    key={workflow.id}
+                    className="flex items-center justify-between px-5 py-4"
+                  >
+                    <div>
+                      <Link
+                        href={`/workflows/${workflow.id}`}
+                        className="text-sm text-zinc-200 transition hover:text-white hover:underline"
+                      >
+                        {workflow.name ?? `Workflow ${workflow.id}`}
+                      </Link>
 
-                        <div className="mt-1 font-mono text-xs text-zinc-600">
-                          {workflow.id}
-                        </div>
+                      <div className="mt-1 font-mono text-xs text-zinc-600">
+                        {workflow.id}
                       </div>
-
-                      <StatusBadge
-                        status={
-                          workflow.status
-                        }
-                      />
                     </div>
-                  ))
+
+                    <StatusBadge status={workflow.status} />
+                  </div>
+                ))
               )}
             </div>
           </section>
@@ -272,21 +235,13 @@ function Metric({
         {label}
       </div>
 
-      <div className="mt-3 text-3xl font-semibold tracking-tight">
-        {value}
-      </div>
+      <div className="mt-3 text-3xl font-semibold tracking-tight">{value}</div>
     </div>
   );
 }
 
-function EmptyState({
-  text,
-}: {
-  text: string;
-}) {
+function EmptyState({ text }: { text: string }) {
   return (
-    <div className="px-5 py-10 text-center text-sm text-zinc-600">
-      {text}
-    </div>
+    <div className="px-5 py-10 text-center text-sm text-zinc-600">{text}</div>
   );
 }
