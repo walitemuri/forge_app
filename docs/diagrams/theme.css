@@ -1,59 +1,40 @@
-/* Forge architecture diagram theme */
-
 .node rect,
 .node polygon,
 .node circle,
 .node ellipse {
-    rx: 10px !important;
-    ry: 10px !important;
-    stroke-width: 1.25px !important;
-}
-
-.cluster rect {
-    rx: 14px !important;
-    ry: 14px !important;
+    rx: 8px !important;
+    ry: 8px !important;
     stroke-width: 1px !important;
 }
 
-.cluster-label text,
-.cluster-label span {
-    font-weight: 600 !important;
-    letter-spacing: 0.02em;
+.cluster rect {
+    rx: 10px !important;
+    ry: 10px !important;
+    stroke-width: 1px !important;
 }
 
 .nodeLabel,
 .edgeLabel,
 .messageText,
-.actor {
-    font-weight: 500;
+.actor,
+.stateLabel,
+.noteText {
+    font-size: 13px !important;
+    font-weight: 400 !important;
+}
+
+.cluster-label text,
+.cluster-label span {
+    font-size: 13px !important;
+    font-weight: 600 !important;
 }
 
 .edgePath path,
 .flowchart-link {
-    stroke-width: 1.6px !important;
-}
-
-.marker {
-    fill: #64748b !important;
-    stroke: #64748b !important;
-}
-
-.edgeLabel {
-    background-color: white !important;
-    border-radius: 6px;
-}
-
-.actor {
-    rx: 9px;
-    ry: 9px;
+    stroke-width: 1.25px !important;
 }
 
 .messageLine0,
 .messageLine1 {
-    stroke-width: 1.4px !important;
-}
-
-.note {
-    rx: 8px;
-    ry: 8px;
+    stroke-width: 1.15px !important;
 }

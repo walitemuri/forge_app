@@ -13,9 +13,11 @@ This document describes the architecture implemented in the repository today. Fo
 
 ## Component view
 
-[<img src="diagrams/component-view.svg"
-alt="Forge controller and worker component architecture"
-width="100%">](diagrams/component-view.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="diagrams/component-view-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="diagrams/component-view-light.svg">
+  <img alt="Forge controller and worker component architecture" src="diagrams/component-view-light.svg" width="100%">
+</picture>
 
 ### Controller
 
@@ -45,9 +47,11 @@ The outbox defaults to `$HOME/.forge/outbox/<workerId>` and can be relocated wit
 
 ## Successful execution flow
 
-[<img src="diagrams/successful-execution.svg"
-alt="Forge successful task execution sequence"
-width="100%">](diagrams/successful-execution.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="diagrams/successful-execution-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="diagrams/successful-execution-light.svg">
+  <img alt="Forge successful task execution sequence" src="diagrams/successful-execution-light.svg" width="100%">
+</picture>
 
 ### Ordering and acknowledgement
 
@@ -57,9 +61,11 @@ This is an at-least-once transport pattern. Correctness therefore depends on the
 
 ## Task lifecycle
 
-[<img src="diagrams/task-lifecycle.svg"
-alt="Forge logical task lifecycle"
-width="100%">](diagrams/task-lifecycle.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="diagrams/task-lifecycle-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="diagrams/task-lifecycle-light.svg">
+  <img alt="Forge logical task lifecycle" src="diagrams/task-lifecycle-light.svg" width="100%">
+</picture>
 
 `maxAttempts` limits automatic physical executions to 1–10. A failed attempt becomes eligible after exponential backoff: 5, 10, 20, 40 seconds and so on, capped at 300 seconds. The retry coordinator checks once per second. Pending dispatch and dependency reconciliation each run every 500 milliseconds.
 
@@ -69,9 +75,11 @@ The workflow status is derived from its task states rather than stored independe
 
 The stable worker ID is not enough to identify an executing process. Two incarnations may overlap during a crash, network partition, or restart. Forge pairs it with a per-process session ID and keeps durable ownership state.
 
-[<img src="diagrams/worker-authority-recovery.svg"
-alt="Forge worker session authority takeover and recovery"
-width="100%">](diagrams/worker-authority-recovery.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="diagrams/worker-authority-recovery-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="diagrams/worker-authority-recovery-light.svg">
+  <img alt="Forge worker session authority takeover and recovery" src="diagrams/worker-authority-recovery-light.svg" width="100%">
+</picture>
 
 Important recovery windows:
 
@@ -84,9 +92,11 @@ Retired sessions are persisted separately from short-lived recovery rows. This p
 
 ## Persistence model
 
-[<img src="diagrams/persistence-model.svg"
-alt="Forge durable persistence model"
-width="100%">](diagrams/persistence-model.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="diagrams/persistence-model-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="diagrams/persistence-model-light.svg">
+  <img alt="Forge durable persistence model" src="diagrams/persistence-model-light.svg" width="100%">
+</picture>
 
 Worker authority tables have no foreign key to the in-memory worker registry. They preserve coordination facts even when no worker is connected. Schema evolution is append-only through `controller/src/main/resources/db/migration` and Hibernate runs in `validate` mode.
 

@@ -10,15 +10,12 @@ IMAGE="ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.16.1"
 USER_ID="$(id -u)"
 GROUP_ID="$(id -g)"
 
-echo "Rendering Forge architecture diagrams..."
-echo
+render() {
+    local source="$1"
+    local name="$2"
+    local mode="$3"
 
-docker pull "$IMAGE"
-
-for source in "$DIAGRAM_DIR"/*.mmd; do
-    name="$(basename "$source" .mmd)"
-
-    echo "  $name.mmd -> $name.svg"
+    echo "  $name.mmd -> $name-$mode.svg"
 
     docker run \
         --rm \
@@ -27,13 +24,23 @@ for source in "$DIAGRAM_DIR"/*.mmd; do
         -v "$DIAGRAM_DIR:/data" \
         -w /data \
         "$IMAGE" \
-        -i "/data/$name.mmd" \
-        -o "/data/$name.svg" \
-        -c "/data/mermaid-config.json" \
+        -i "/data/$source" \
+        -o "/data/$name-$mode.svg" \
+        -c "/data/mermaid-config-$mode.json" \
         -C "/data/theme.css" \
         -b transparent \
         -w 1800
+}
+
+echo "Rendering Forge diagrams..."
+
+for source in "$DIAGRAM_DIR"/*.mmd; do
+    file="$(basename "$source")"
+    name="${file%.mmd}"
+
+    render "$file" "$name" light
+    render "$file" "$name" dark
 done
 
 echo
-echo "✓ Diagrams rendered"
+echo "✓ Light and dark diagrams rendered"

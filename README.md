@@ -32,9 +32,11 @@ Forge focuses on the parts of distributed execution that become difficult after 
 
 ## System at a glance
 
-[<img src="docs/diagrams/system-overview.svg"
-alt="Forge distributed workflow execution architecture"
-width="100%">](docs/diagrams/system-overview.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/system-overview-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/diagrams/system-overview-light.svg">
+  <img alt="Forge distributed workflow execution architecture" src="docs/diagrams/system-overview-light.svg" width="100%">
+</picture>
 
 The REST API is the user-facing control surface. The controller persists logical tasks and physical attempts, schedules work onto connected workers, and reconciles failure. Workers execute commands in dedicated process groups and use the outbox to bridge network or controller outages. The shared [Protocol Buffers contract](proto/forge.proto) keeps both runtimes aligned.
 
