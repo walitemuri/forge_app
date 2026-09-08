@@ -385,3 +385,193 @@ jobs:
         run: |
           echo "================ Worker ===================="
           cat /tmp/forge-worker.log || true
+
+
+  # ============================================================
+  # Worker crash / session-loss recovery
+  # ============================================================
+
+  recovery:
+    name: Recovery
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    needs:
+      - controller
+      - worker
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: forge
+          POSTGRES_USER: forge
+          POSTGRES_PASSWORD: forge
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U forge -d forge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+          cache-dependency-path: |
+            controller/*.gradle
+            controller/*.gradle.kts
+            controller/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Install worker dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            protobuf-compiler \
+            protobuf-compiler-grpc \
+            libprotobuf-dev \
+            libgrpc-dev \
+            libgrpc++-dev
+
+      # Important:
+      # worker_session_fencing_smoke_test.py expects:
+      #
+      #   worker/build/forge-worker
+      #
+      # so this job intentionally uses worker/build rather than build-ci.
+      - name: Build worker for recovery tests
+        run: |
+          cmake \
+            -S worker \
+            -B worker/build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release
+
+          cmake \
+            --build worker/build \
+            --parallel 2
+
+          test -x worker/build/forge-worker
+
+      - name: Start controller
+        run: |
+          chmod +x controller/gradlew
+
+          (
+            cd controller
+            ./gradlew bootRun --no-daemon \
+              > /tmp/forge-recovery-controller.log 2>&1
+          ) &
+
+          echo $! > /tmp/forge-recovery-controller.pid
+
+      - name: Wait for controller
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for attempt in {1..60}; do
+            if curl \
+              --fail \
+              --silent \
+              http://127.0.0.1:8080/api/workers \
+              >/dev/null
+            then
+              echo "Controller is ready"
+              exit 0
+            fi
+
+            sleep 1
+          done
+
+          echo "Controller did not become ready"
+          cat /tmp/forge-recovery-controller.log
+          exit 1
+
+      - name: Start initial worker
+        run: |
+          rm -rf /tmp/forge-recovery-outbox
+
+          FORGE_OUTBOX_DIR=/tmp/forge-recovery-outbox \
+            ./worker/build/forge-worker \
+            > /tmp/forge-recovery-worker.log 2>&1 &
+
+          echo $! > /tmp/forge-recovery-worker.pid
+
+      - name: Wait for initial worker
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          url = "http://127.0.0.1:8080/api/workers"
+
+          for attempt in range(60):
+              try:
+                  with urllib.request.urlopen(url, timeout=2) as response:
+                      workers = json.load(response)
+
+                  online = [
+                      worker
+                      for worker in workers
+                      if worker.get("online")
+                      and worker.get("commandStreamConnected")
+                  ]
+
+                  if len(online) == 1:
+                      print(
+                          "Initial worker online:",
+                          online[0]["id"],
+                          online[0]["sessionId"],
+                      )
+                      raise SystemExit(0)
+
+              except Exception as exc:
+                  print(
+                      f"attempt {attempt + 1}: "
+                      f"{type(exc).__name__}"
+                  )
+
+              time.sleep(1)
+
+          raise SystemExit(
+              "Initial worker never became ready"
+          )
+          PY
+
+      - name: Verify session-loss recovery and retry
+        run: |
+          python3 scripts/worker_session_loss_retry_smoke_test.py
+
+      - name: Show controller log
+        if: always()
+        run: |
+          echo "================ Controller ================"
+          cat /tmp/forge-recovery-controller.log || true
+
+      - name: Show initial worker log
+        if: always()
+        run: |
+          echo "================ Initial worker ============="
+          cat /tmp/forge-recovery-worker.log || true
+
+      - name: Show replacement worker log
+        if: always()
+        run: |
+          echo "================ Replacement worker ========="
+          cat /tmp/forge_worker_fencing_secondary.log || true
