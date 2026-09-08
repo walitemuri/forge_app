@@ -185,6 +185,34 @@ ProcessResult executeProcess(
         close(stderrPipe[0]);
 
 
+        /*
+         * Forge tasks are non-interactive.
+         *
+         * Do not allow an execution process to inherit the
+         * worker daemon's terminal. Tasks run in their own
+         * process group, so reading from an inherited TTY
+         * could stop the process with SIGTTIN.
+         */
+        int nullInput =
+            open(
+                "/dev/null",
+                O_RDONLY
+            );
+
+
+        if (nullInput != -1) {
+
+            dup2(
+                nullInput,
+                STDIN_FILENO
+            );
+
+            close(
+                nullInput
+            );
+        }
+
+
         dup2(
             stdoutPipe[1],
             STDOUT_FILENO

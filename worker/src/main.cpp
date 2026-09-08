@@ -552,8 +552,18 @@ int main(
     const std::string hostname =
         getHostname();
 
+
+    const char* configuredWorkerId =
+        std::getenv(
+            "FORGE_WORKER_ID"
+        );
+
+
     const std::string workerId =
-        hostname + "-worker";
+        configuredWorkerId != nullptr
+            && configuredWorkerId[0] != '\0'
+                ? configuredWorkerId
+                : hostname + "-worker";
 
     /*
      * Unique identity for this exact worker process.
