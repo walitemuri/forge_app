@@ -1,0 +1,34 @@
+flowchart LR
+
+    Client["REST Client"]
+
+    subgraph Control["Forge Controller · Java 21"]
+        API["REST API<br/>:8080"]
+        Services["Workflow + Task<br/>Services"]
+        Scheduler["Scheduler +<br/>Recovery"]
+        GRPC["gRPC Server<br/>:50051"]
+        Authority["Worker Registry<br/>+ Session Authority"]
+
+        API --> Services
+        Services --> Scheduler
+        Scheduler --> GRPC
+        GRPC --> Authority
+    end
+
+    DB[("PostgreSQL<br/>Durable State")]
+
+    subgraph Execution["Execution Plane · C++20"]
+        W1["Worker A"]
+        W2["Worker B"]
+        W3["Worker C"]
+    end
+
+    Client --> API
+
+    Services --> DB
+    Scheduler --> DB
+    Authority --> DB
+
+    GRPC <-->|gRPC| W1
+    GRPC <-->|gRPC| W2
+    GRPC <-->|gRPC| W3

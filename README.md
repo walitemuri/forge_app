@@ -32,39 +32,9 @@ Forge focuses on the parts of distributed execution that become difficult after 
 
 ## System at a glance
 
-```mermaid
-flowchart LR
-    client[REST client]
-
-    subgraph controller["Java control plane"]
-        api[REST API]
-        orchestration[Task and workflow orchestration]
-        scheduler[Capacity-aware scheduler]
-        grpc[gRPC server]
-        recovery[Recovery coordinators]
-    end
-
-    db[(PostgreSQL)]
-
-    subgraph worker["C++ worker process"]
-        stream[Bidirectional command stream]
-        pool[Executor pool]
-        outbox[(Durable event outbox)]
-        process[Child process group]
-    end
-
-    client -->|submit, inspect, cancel, retry| api
-    api --> orchestration
-    orchestration --> scheduler
-    scheduler --> grpc
-    orchestration --> db
-    recovery --> db
-    grpc <-->|assignments, events, acknowledgements| stream
-    stream --> pool
-    pool --> process
-    pool --> outbox
-    outbox --> stream
-```
+[<img src="docs/diagrams/system-overview.svg"
+alt="Forge distributed workflow execution architecture"
+width="100%">](docs/diagrams/system-overview.svg)
 
 The REST API is the user-facing control surface. The controller persists logical tasks and physical attempts, schedules work onto connected workers, and reconciles failure. Workers execute commands in dedicated process groups and use the outbox to bridge network or controller outages. The shared [Protocol Buffers contract](proto/forge.proto) keeps both runtimes aligned.
 

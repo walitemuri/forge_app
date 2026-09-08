@@ -1,0 +1,29 @@
+sequenceDiagram
+
+    participant A as Worker Session A
+    participant C as Worker Session C
+    participant Controller
+    participant DB as PostgreSQL
+
+    Note over A,DB: workerId = build-host-worker
+    Note over DB: authoritative session = A
+
+    A->>Controller: disconnect / become unavailable
+
+    C->>Controller: Register workerId, session C
+    Controller->>DB: Read authority → A
+
+    rect rgb(245,245,245)
+        Note over Controller,DB: Atomic takeover transaction
+        Controller->>DB: Schedule recovery for A
+        Controller->>DB: Mark A permanently retired
+        Controller->>DB: CAS authority A → C
+    end
+
+    DB-->>Controller: COMMIT
+    Controller-->>C: Registration accepted
+
+    A->>Controller: Late reconnect
+    Controller->>DB: Is A retired?
+    DB-->>Controller: yes
+    Controller-->>A: Reject stale session

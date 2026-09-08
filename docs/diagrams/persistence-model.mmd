@@ -1,0 +1,40 @@
+flowchart LR
+
+    Workflow["Workflow"]
+
+    TaskA["Logical Task"]
+    TaskB["Logical Task"]
+
+    Attempt1["Attempt #1"]
+    Attempt2["Attempt #2"]
+
+    Events["Execution Events"]
+
+    Authority["Worker Authority"]
+    Retired["Retired Sessions"]
+    Recovery["Session Recovery"]
+
+    Worker["C++ Worker"]
+    Outbox[("Disk Outbox")]
+
+    DB[("PostgreSQL")]
+
+    Workflow --> TaskA
+    Workflow --> TaskB
+
+    TaskA --> Attempt1
+    TaskA --> Attempt2
+
+    Workflow --> DB
+    TaskA --> DB
+    TaskB --> DB
+    Attempt1 --> DB
+    Attempt2 --> DB
+
+    Events --> DB
+    Authority --> DB
+    Retired --> DB
+    Recovery --> DB
+
+    Worker --> Outbox
+    Outbox -->|TaskAccepted / TaskResult| Events

@@ -1,0 +1,24 @@
+stateDiagram-v2
+
+    [*] --> CREATED
+
+    CREATED --> BLOCKED: dependencies exist
+    CREATED --> PENDING: no dependencies
+
+    BLOCKED --> PENDING: all parents succeeded
+    BLOCKED --> SKIPPED: dependency failed
+
+    PENDING --> DISPATCHED: worker reserved
+    DISPATCHED --> RUNNING: TaskAccepted
+
+    RUNNING --> SUCCEEDED
+    RUNNING --> FAILED
+    RUNNING --> LOST
+    RUNNING --> CANCELLED
+
+    FAILED --> PENDING: retry budget available
+    LOST --> PENDING: retry budget available
+
+    SUCCEEDED --> [*]
+    CANCELLED --> [*]
+    SKIPPED --> [*]

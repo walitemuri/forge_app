@@ -1,0 +1,68 @@
+flowchart TB
+
+    subgraph API["API Layer"]
+        REST["REST Controllers"]
+        GRPC["gRPC Controller Service"]
+    end
+
+    subgraph Core["Orchestration Layer"]
+        Workflow["Workflow Service"]
+        Tasks["Task Service"]
+        Dependencies["Dependency Coordinator"]
+        Scheduler["Task Scheduler"]
+        Retry["Retry Coordinator"]
+        Recovery["Recovery Services"]
+    end
+
+    subgraph Workers["Worker Coordination"]
+        Registry["Worker Registry"]
+        Health["Health Monitor"]
+        Authority["Session Authority"]
+        History["Retired Session History"]
+    end
+
+    subgraph Durable["Durable State"]
+        DB[("PostgreSQL")]
+        Events["Execution Timeline"]
+    end
+
+    subgraph Worker["C++ Worker"]
+        Pool["Task Executor Pool"]
+        Process["Process Executor"]
+        Outbox[("Durable Event Outbox")]
+    end
+
+    REST --> Workflow
+    REST --> Tasks
+
+    Workflow --> Dependencies
+    Tasks --> Scheduler
+    Dependencies --> Scheduler
+    Retry --> Tasks
+    Recovery --> Tasks
+
+    Scheduler --> Registry
+    Scheduler --> GRPC
+
+    GRPC --> Registry
+    GRPC --> Authority
+
+    Registry --> Health
+    Authority --> History
+
+    Workflow --> DB
+    Tasks --> DB
+    Retry --> DB
+    Recovery --> DB
+    Authority --> DB
+    History --> DB
+
+    Tasks --> Events
+    GRPC --> Events
+    Events --> DB
+
+    GRPC <-->|Bidirectional gRPC| Worker
+
+    Pool --> Process
+    Pool --> Outbox
+    Outbox -->|Reliable events| GRPC

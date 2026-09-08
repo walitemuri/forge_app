@@ -13,48 +13,9 @@ This document describes the architecture implemented in the repository today. Fo
 
 ## Component view
 
-```mermaid
-flowchart LR
-    user[API consumer]
-
-    subgraph controlPlane["Controller process - Java 21"]
-        rest[Spring REST controllers]
-        workflow[Workflow service]
-        tasks[Task service]
-        coordinators[Dependency, pending, retry, and recovery coordinators]
-        scheduler[Worker scheduler]
-        registry[In-memory worker registry]
-        grpcServer[gRPC service]
-        persistence[JPA repositories and Flyway]
-    end
-
-    postgres[(PostgreSQL 17)]
-
-    subgraph workerProcess["Worker process - C++20"]
-        connection[Registration, heartbeat, and stream loop]
-        executors[Task executor pool]
-        runner[POSIX process executor]
-        outbox[(Filesystem outbox)]
-    end
-
-    user -->|HTTP JSON| rest
-    rest --> workflow
-    rest --> tasks
-    workflow --> tasks
-    tasks --> scheduler
-    coordinators --> tasks
-    scheduler --> registry
-    grpcServer --> registry
-    tasks --> persistence
-    workflow --> persistence
-    coordinators --> persistence
-    persistence -->|JDBC| postgres
-    grpcServer <-->|Bidirectional gRPC| connection
-    connection --> executors
-    executors --> runner
-    executors --> outbox
-    outbox --> connection
-```
+[<img src="diagrams/component-view.svg"
+alt="Forge controller and worker component architecture"
+width="100%">](diagrams/component-view.svg)
 
 ### Controller
 
@@ -84,42 +45,9 @@ The outbox defaults to `$HOME/.forge/outbox/<workerId>` and can be relocated wit
 
 ## Successful execution flow
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Controller
-    participant Database as PostgreSQL
-    participant Worker
-    participant Outbox as Worker outbox
-
-    Worker->>Controller: RegisterWorker with workerId and sessionId
-    Controller->>Database: Claim or verify durable authority
-    Controller-->>Worker: Registration accepted
-    Worker->>Controller: Open ConnectWorker stream and send WorkerHello
-
-    Client->>Controller: POST task or workflow
-    Controller->>Database: Persist logical task as PENDING or BLOCKED
-    Controller->>Database: Create attempt and persist ownership
-    Controller-->>Worker: TaskAssignment
-
-    Worker->>Worker: Start child process group
-    Worker->>Outbox: Persist TaskAccepted event
-    Outbox->>Controller: Replay TaskAccepted
-    Controller->>Database: Mark attempt and task RUNNING
-    Controller-->>Worker: WorkerEventAck
-    Worker->>Outbox: Remove acknowledged event
-
-    Worker->>Worker: Wait, cancel, or enforce timeout
-    Worker->>Outbox: Persist TaskResult event
-    Outbox->>Controller: Replay TaskResult
-    Controller->>Database: Complete attempt, task, and timeline
-    Controller-->>Worker: WorkerEventAck
-    Worker->>Outbox: Remove acknowledged event
-
-    Client->>Controller: GET task, workflow, attempts, or events
-    Controller->>Database: Read persisted state
-    Controller-->>Client: JSON response
-```
+[<img src="diagrams/successful-execution.svg"
+alt="Forge successful task execution sequence"
+width="100%">](diagrams/successful-execution.svg)
 
 ### Ordering and acknowledgement
 
@@ -129,31 +57,9 @@ This is an at-least-once transport pattern. Correctness therefore depends on the
 
 ## Task lifecycle
 
-```mermaid
-stateDiagram-v2
-    [*] --> PENDING: no dependencies or all succeeded
-    [*] --> BLOCKED: unresolved dependencies
-    BLOCKED --> PENDING: every dependency succeeds
-    BLOCKED --> SKIPPED: dependency cannot succeed
-    BLOCKED --> CANCELLED: task or workflow cancelled
-    PENDING --> DISPATCHED: worker capacity reserved
-    PENDING --> CANCELLED: task or workflow cancelled
-    DISPATCHED --> RUNNING: accepted event
-    DISPATCHED --> FAILED: send or pre-start failure
-    DISPATCHED --> LOST: worker session lost
-    DISPATCHED --> CANCELLED: cancellation completes
-    RUNNING --> SUCCEEDED: successful result
-    RUNNING --> FAILED: unsuccessful result
-    RUNNING --> LOST: worker session lost
-    RUNNING --> CANCELLED: cancellation completes
-    FAILED --> DISPATCHED: retry eligible and capacity available
-    LOST --> DISPATCHED: retry eligible and capacity available
-    SUCCEEDED --> [*]
-    FAILED --> [*]: retry budget exhausted
-    LOST --> [*]: retry budget exhausted
-    CANCELLED --> [*]
-    SKIPPED --> [*]
-```
+[<img src="diagrams/task-lifecycle.svg"
+alt="Forge logical task lifecycle"
+width="100%">](diagrams/task-lifecycle.svg)
 
 `maxAttempts` limits automatic physical executions to 1–10. A failed attempt becomes eligible after exponential backoff: 5, 10, 20, 40 seconds and so on, capped at 300 seconds. The retry coordinator checks once per second. Pending dispatch and dependency reconciliation each run every 500 milliseconds.
 
@@ -163,31 +69,9 @@ The workflow status is derived from its task states rather than stored independe
 
 The stable worker ID is not enough to identify an executing process. Two incarnations may overlap during a crash, network partition, or restart. Forge pairs it with a per-process session ID and keeps durable ownership state.
 
-```mermaid
-sequenceDiagram
-    participant Old as Session A
-    participant Controller
-    participant Database as PostgreSQL
-    participant New as Session B
-
-    Old->>Controller: Heartbeats and command stream
-    Controller->>Database: Authority is workerId to session A
-    Controller->>Controller: Heartbeat exceeds 15 seconds
-    Controller-->>Old: Disconnect stream and mark offline
-
-    New->>Controller: Register same workerId with session B
-    Controller->>Database: Begin takeover transaction
-    Controller->>Database: Persist recovery grace for session A
-    Controller->>Database: Retire session A permanently
-    Controller->>Database: Compare-and-swap authority A to B
-    Database-->>Controller: Commit atomically
-    Controller-->>New: Registration accepted
-
-    Old->>Controller: Late heartbeat, stream, or result
-    Controller-->>Old: Reject stale retired session
-    New->>Controller: Replay durable events if present
-    Controller-->>New: ACK authoritative events
-```
+[<img src="diagrams/worker-authority-recovery.svg"
+alt="Forge worker session authority takeover and recovery"
+width="100%">](diagrams/worker-authority-recovery.svg)
 
 Important recovery windows:
 
@@ -200,79 +84,9 @@ Retired sessions are persisted separately from short-lived recovery rows. This p
 
 ## Persistence model
 
-```mermaid
-erDiagram
-    FORGE_WORKFLOWS ||--o{ FORGE_TASKS : contains
-    FORGE_TASKS ||--o{ FORGE_TASK_ARGUMENTS : orders
-    FORGE_TASKS ||--o{ TASK_ATTEMPTS : executes_as
-    FORGE_TASKS ||--o{ TASK_DEPENDENCIES : dependent
-    FORGE_TASKS ||--o{ TASK_DEPENDENCIES : prerequisite
-    FORGE_WORKFLOWS o|--o{ EXECUTION_EVENTS : describes
-    FORGE_TASKS o|--o{ EXECUTION_EVENTS : describes
-    TASK_ATTEMPTS o|--o{ EXECUTION_EVENTS : describes
-
-    FORGE_WORKFLOWS {
-        string id PK
-        string name
-        timestamptz created_at
-        boolean cancel_requested
-    }
-    FORGE_TASKS {
-        string id PK
-        string workflow_id FK
-        string workflow_task_key
-        string command
-        string status
-        int max_attempts
-        int timeout_seconds
-        boolean cancel_requested
-    }
-    TASK_ATTEMPTS {
-        string id PK
-        string task_id FK
-        int attempt_number
-        string worker_id
-        string worker_session_id
-        string status
-        timestamptz started_at
-        timestamptz finished_at
-    }
-    FORGE_TASK_ARGUMENTS {
-        string task_id FK
-        int argument_index
-        text argument_value
-    }
-    TASK_DEPENDENCIES {
-        string task_id PK, FK
-        string depends_on_task_id PK, FK
-    }
-    EXECUTION_EVENTS {
-        bigint id PK
-        string event_type
-        string workflow_id FK
-        string task_id FK
-        string attempt_id FK
-        string worker_id
-        timestamptz created_at
-    }
-    WORKER_AUTHORITIES {
-        string worker_id PK
-        string session_id
-        timestamptz updated_at
-    }
-    WORKER_SESSION_RECOVERIES {
-        string id PK
-        string worker_id
-        string session_id
-        timestamptz recover_after
-    }
-    RETIRED_WORKER_SESSIONS {
-        string id PK
-        string worker_id
-        string session_id
-        timestamptz retired_at
-    }
-```
+[<img src="diagrams/persistence-model.svg"
+alt="Forge durable persistence model"
+width="100%">](diagrams/persistence-model.svg)
 
 Worker authority tables have no foreign key to the in-memory worker registry. They preserve coordination facts even when no worker is connected. Schema evolution is append-only through `controller/src/main/resources/db/migration` and Hibernate runs in `validate` mode.
 

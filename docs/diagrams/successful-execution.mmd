@@ -1,0 +1,35 @@
+sequenceDiagram
+
+    participant Client
+    participant Controller
+    participant DB as PostgreSQL
+    participant Worker
+    participant Outbox
+    participant Process
+
+    Client->>Controller: Submit task / workflow
+    Controller->>DB: Persist logical task
+    Controller->>DB: Create physical attempt
+
+    Controller->>Worker: TaskAssignment
+
+    Worker->>Outbox: Persist TaskAccepted
+    Outbox->>Outbox: fsync
+    Worker->>Controller: TaskAccepted
+
+    Controller->>DB: Attempt → RUNNING
+    Controller-->>Worker: EventAck
+
+    Worker->>Outbox: Remove acknowledged event
+
+    Worker->>Process: fork / exec
+    Process-->>Worker: exit + stdout + stderr
+
+    Worker->>Outbox: Persist TaskResult
+    Outbox->>Outbox: fsync
+    Worker->>Controller: TaskResult
+
+    Controller->>DB: Persist result + timeline
+    Controller-->>Worker: EventAck
+
+    Worker->>Outbox: Remove acknowledged event
