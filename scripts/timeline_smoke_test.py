@@ -198,6 +198,43 @@ def assert_subsequence(
         )
 
 
+def wait_for_subsequence(
+        event_supplier,
+        expected,
+        description,
+        timeout=DEFAULT_TIMEOUT):
+
+    deadline = time.time() + timeout
+    last_actual = []
+
+    while time.time() < deadline:
+
+        last_actual = types(
+            event_supplier()
+        )
+
+        position = 0
+
+        for item in last_actual:
+            if position < len(expected) \
+                    and item == expected[position]:
+
+                position += 1
+
+        if position == len(expected):
+            return last_actual
+
+        time.sleep(POLL_INTERVAL)
+
+    raise AssertionError(
+        f"{description}\n"
+        f"Expected subsequence:\n"
+        f"  {expected}\n"
+        f"Actual:\n"
+        f"  {last_actual}"
+    )
+
+
 def assert_monotonic_ids(events):
     ids = [
         event["id"]
@@ -702,14 +739,8 @@ def test_workflow_retry():
         "Workflow retry event missing",
     )
 
-    task_type_list = types(
-        task_events(
-            task_id
-        )
-    )
-
-    assert_subsequence(
-        task_type_list,
+    wait_for_subsequence(
+        lambda: task_events(task_id),
         [
             "TASK_FAILED",
             "TASK_PENDING",
