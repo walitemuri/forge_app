@@ -1,34 +1,52 @@
 flowchart LR
 
-    Client["REST Client"]
+    CLIENT["API Client"]
 
-    subgraph Control["Forge Controller · Java 21"]
-        API["REST API<br/>:8080"]
-        Services["Workflow + Task<br/>Services"]
-        Scheduler["Scheduler +<br/>Recovery"]
-        GRPC["gRPC Server<br/>:50051"]
-        Authority["Worker Registry<br/>+ Session Authority"]
+    subgraph CONTROL["FORGE CONTROL PLANE"]
+        direction LR
 
-        API --> Services
-        Services --> Scheduler
-        Scheduler --> GRPC
-        GRPC --> Authority
+        API["REST API<br/><small>Spring Boot · :8080</small>"]
+
+        CORE["Workflow Engine<br/><small>DAG orchestration · retries · recovery</small>"]
+
+        SCHED["Scheduler<br/><small>attempt placement</small>"]
+
+        GRPC["gRPC Gateway<br/><small>bidirectional · :50051</small>"]
+
+        API --> CORE
+        CORE --> SCHED
+        SCHED --> GRPC
     end
 
-    DB[("PostgreSQL<br/>Durable State")]
+    DB[("PostgreSQL<br/><small>durable system state</small>")]
 
-    subgraph Execution["Execution Plane · C++20"]
-        W1["Worker A"]
-        W2["Worker B"]
-        W3["Worker C"]
+    subgraph EXECUTION["EXECUTION PLANE"]
+        direction TB
+
+        W1["Worker A<br/><small>C++20</small>"]
+        W2["Worker B<br/><small>C++20</small>"]
+        W3["Worker C<br/><small>C++20</small>"]
     end
 
-    Client --> API
+    CLIENT -->|"HTTP / JSON"| API
 
-    Services --> DB
-    Scheduler --> DB
-    Authority --> DB
+    CORE --> DB
+    SCHED --> DB
 
-    GRPC <-->|gRPC| W1
-    GRPC <-->|gRPC| W2
-    GRPC <-->|gRPC| W3
+    GRPC <-->|"tasks + events"| W1
+    GRPC <-->|"tasks + events"| W2
+    GRPC <-->|"tasks + events"| W3
+
+
+    classDef client fill:#ffffff,stroke:#94a3b8,color:#334155,stroke-width:1.5px;
+    classDef control fill:#eff6ff,stroke:#60a5fa,color:#172554,stroke-width:1.5px;
+    classDef database fill:#f5f3ff,stroke:#a78bfa,color:#4c1d95,stroke-width:1.5px;
+    classDef worker fill:#ecfdf5,stroke:#6ee7b7,color:#064e3b,stroke-width:1.5px;
+
+    class CLIENT client;
+    class API,CORE,SCHED,GRPC control;
+    class DB database;
+    class W1,W2,W3 worker;
+
+    style CONTROL fill:#f8fafc,stroke:#cbd5e1,stroke-width:1px
+    style EXECUTION fill:#f8fafc,stroke:#cbd5e1,stroke-width:1px

@@ -1,24 +1,63 @@
 stateDiagram-v2
+direction LR
 
-    [*] --> CREATED
+[*] --> CREATED
 
-    CREATED --> BLOCKED: dependencies exist
-    CREATED --> PENDING: no dependencies
+CREATED --> PENDING: no dependencies
+CREATED --> BLOCKED: has dependencies
 
-    BLOCKED --> PENDING: all parents succeeded
-    BLOCKED --> SKIPPED: dependency failed
+BLOCKED --> PENDING: all dependencies succeeded
+BLOCKED --> SKIPPED: any dependency failed/skipped
+BLOCKED --> CANCELLED: cancelled before release
 
-    PENDING --> DISPATCHED: worker reserved
-    DISPATCHED --> RUNNING: TaskAccepted
+PENDING --> DISPATCHED: scheduler assigns worker
+DISPATCHED --> RUNNING: worker accepts attempt
+DISPATCHED --> LOST: worker/session lost before acceptance
 
-    RUNNING --> SUCCEEDED
-    RUNNING --> FAILED
-    RUNNING --> LOST
-    RUNNING --> CANCELLED
+RUNNING --> SUCCEEDED: exit code 0
+RUNNING --> FAILED: non-zero exit code
+RUNNING --> CANCELLED: cancellation delivered
+RUNNING --> LOST: worker/session lost mid-execution
 
-    FAILED --> PENDING: retry budget available
-    LOST --> PENDING: retry budget available
+FAILED --> PENDING: automatic/manual retry allowed
+LOST --> PENDING: retry after recovery/backoff
+CANCELLED --> PENDING: manual retry allowed
+SKIPPED --> PENDING: upstream retried and succeeds
 
-    SUCCEEDED --> [*]
-    CANCELLED --> [*]
-    SKIPPED --> [*]
+SUCCEEDED --> [*]
+SKIPPED --> [*]
+CANCELLED --> [*]
+
+note right of CREATED
+Task is persisted.
+Initial state is decided
+by dependency presence.
+end note
+
+note right of BLOCKED
+Waiting for upstream tasks.
+Never dispatched to a worker.
+end note
+
+note right of PENDING
+Eligible for scheduling.
+No worker assigned yet.
+end note
+
+note right of DISPATCHED
+Attempt created and assigned,
+but worker has not confirmed
+execution yet.
+end note
+
+note right of RUNNING
+Worker acknowledged the task
+and is executing it.
+end note
+
+note right of LOST
+Controller no longer trusts
+the in-flight attempt.
+A later retry may create
+a new attempt.
+end note

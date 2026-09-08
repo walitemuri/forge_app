@@ -29,6 +29,8 @@ for source in "$DIAGRAM_DIR"/*.mmd; do
         "$IMAGE" \
         -i "/data/$name.mmd" \
         -o "/data/$name.svg" \
+        -c "/data/mermaid-config.json" \
+        -C "/data/theme.css" \
         -b transparent \
         -w 1800
 done
