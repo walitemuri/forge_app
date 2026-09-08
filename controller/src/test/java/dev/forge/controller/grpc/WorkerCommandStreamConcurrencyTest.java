@@ -394,4 +394,180 @@ class WorkerCommandStreamConcurrencyTest {
                     );
         }
     }
+
+
+    @Test
+    void newerStreamFencesOlderStreamForSameSession() {
+
+        String workerId =
+                "duplicate-stream-worker-"
+                        + UUID.randomUUID();
+
+        String sessionId =
+                "session-a";
+
+
+        TaskRegistry taskRegistry =
+                mock(TaskRegistry.class);
+
+        TaskAttemptRegistry taskAttemptRegistry =
+                mock(TaskAttemptRegistry.class);
+
+        ExecutionEventService executionEventService =
+                mock(ExecutionEventService.class);
+
+        WorkerSessionRecoveryCoordinator recoveryCoordinator =
+                mock(WorkerSessionRecoveryCoordinator.class);
+
+        WorkerAuthorityService authorityService =
+                mock(WorkerAuthorityService.class);
+
+        WorkerTakeoverService takeoverService =
+                mock(WorkerTakeoverService.class);
+
+        WorkerSessionHistoryService historyService =
+                mock(WorkerSessionHistoryService.class);
+
+        WorkerColdStartGrace coldStartGrace =
+                mock(WorkerColdStartGrace.class);
+
+
+        WorkerState worker =
+                new WorkerState(
+                        workerId,
+                        sessionId,
+                        "test-host",
+                        4,
+                        1024,
+                        "Linux"
+                );
+
+
+        WorkerRegistry.register(
+                worker
+        );
+
+
+        ForgeControllerService service =
+                new ForgeControllerService(
+                        taskRegistry,
+                        taskAttemptRegistry,
+                        executionEventService,
+                        recoveryCoordinator,
+                        authorityService,
+                        takeoverService,
+                        historyService,
+                        coldStartGrace
+                );
+
+
+        @SuppressWarnings("unchecked")
+        StreamObserver<ControllerMessage>
+                responseOne =
+                mock(StreamObserver.class);
+
+        @SuppressWarnings("unchecked")
+        StreamObserver<ControllerMessage>
+                responseTwo =
+                mock(StreamObserver.class);
+
+
+        StreamObserver<WorkerMessage>
+                inboundOne =
+                service.connectWorker(
+                        responseOne
+                );
+
+        StreamObserver<WorkerMessage>
+                inboundTwo =
+                service.connectWorker(
+                        responseTwo
+                );
+
+
+        WorkerMessage hello =
+                WorkerMessage
+                        .newBuilder()
+                        .setHello(
+                                WorkerHello
+                                        .newBuilder()
+                                        .setWorkerId(
+                                                workerId
+                                        )
+                                        .setSessionId(
+                                                sessionId
+                                        )
+                                        .setHostname(
+                                                "test-host"
+                                        )
+                                        .setCpuCores(
+                                                4
+                                        )
+                                        .setMemoryBytes(
+                                                1024
+                                        )
+                                        .setOperatingSystem(
+                                                "Linux"
+                                        )
+                                        .build()
+                        )
+                        .build();
+
+
+        try {
+
+            inboundOne.onNext(
+                    hello
+            );
+
+            assertEquals(
+                    responseOne,
+                    worker.getCommandStream(),
+                    "First stream did not attach"
+            );
+
+
+            /*
+             * Same process/session reconnects before the old
+             * transport has fully disappeared.
+             */
+            inboundTwo.onNext(
+                    hello
+            );
+
+
+            assertEquals(
+                    responseTwo,
+                    worker.getCommandStream(),
+                    "New stream did not replace old stream"
+            );
+
+
+            /*
+             * The previous stream must be actively terminated.
+             *
+             * Merely overwriting the WorkerState pointer leaves
+             * the old inbound transport alive and still accepted
+             * because it carries the same session ID.
+             *
+             * Current implementation should FAIL here.
+             */
+            org.mockito.Mockito.verify(
+                    responseOne
+            ).onError(
+                    org.mockito.ArgumentMatchers
+                            .any(Throwable.class)
+            );
+
+        }
+        finally {
+
+            WorkerRegistry
+                    .getWorkers()
+                    .remove(
+                            workerId
+                    );
+        }
+    }
+
 }

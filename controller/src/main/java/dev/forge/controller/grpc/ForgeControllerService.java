@@ -1087,7 +1087,7 @@ public class ForgeControllerService
                         }
 
 
-                        worker.setCommandStream(
+                        worker.replaceCommandStream(
                                 responseObserver
                         );
                     }
@@ -1859,13 +1859,9 @@ public class ForgeControllerService
                      * newer stream by the time an old stream's
                      * onError callback runs.
                      */
-                    if (worker.getCommandStream()
-                            == responseObserver) {
-
-                        worker.setCommandStream(
-                                null
-                        );
-                    }
+                    worker.clearCommandStreamIfCurrent(
+                            responseObserver
+                    );
                 }
             }
         };

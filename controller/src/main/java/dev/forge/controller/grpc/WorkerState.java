@@ -148,6 +148,90 @@ public class WorkerState {
     }
 
 
+    /*
+     * Install a new authoritative command stream.
+     *
+     * A worker process can reconnect before the controller has
+     * observed the old transport closing. Both streams carry the
+     * same session ID, so session fencing alone cannot distinguish
+     * them.
+     *
+     * Publish the new stream BEFORE terminating the previous one.
+     * That way an old stream's cleanup callback cannot accidentally
+     * clear the newly installed stream.
+     */
+    public synchronized void replaceCommandStream(
+            StreamObserver<ControllerMessage> newStream) {
+
+        StreamObserver<ControllerMessage> previousStream =
+                commandStream;
+
+
+        if (previousStream == newStream) {
+            return;
+        }
+
+
+        commandStream =
+                newStream;
+
+
+        if (previousStream == null) {
+            return;
+        }
+
+
+        try {
+
+            previousStream.onError(
+                    Status.UNAVAILABLE
+                            .withDescription(
+                                    "Worker command stream superseded by reconnect"
+                            )
+                            .asRuntimeException()
+            );
+
+        }
+        catch (RuntimeException exception) {
+
+            /*
+             * The previous transport may already be closing.
+             * The authoritative pointer is still correct because
+             * it was replaced before attempting onError().
+             */
+            System.err.println(
+                    "Failed to close superseded command stream for "
+                            + workerId
+                            + ": "
+                            + exception.getMessage()
+            );
+        }
+    }
+
+
+    /*
+     * Compare-and-clear for stream cleanup.
+     *
+     * This must be one synchronized operation. A separate
+     *
+     *     getCommandStream() == expected
+     *     setCommandStream(null)
+     *
+     * sequence races with a reconnect installing a new stream
+     * between those two calls.
+     */
+    public synchronized void clearCommandStreamIfCurrent(
+            StreamObserver<ControllerMessage> expectedStream) {
+
+        if (commandStream
+                == expectedStream) {
+
+            commandStream =
+                    null;
+        }
+    }
+
+
     public void setCommandStream(
             StreamObserver<ControllerMessage> commandStream) {
 
