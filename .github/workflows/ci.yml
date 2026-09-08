@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  controller:
+    name: Controller
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: forge
+          POSTGRES_USER: forge
+          POSTGRES_PASSWORD: forge
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U forge -d forge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Make Gradle wrapper executable
+        working-directory: controller
+        run: chmod +x gradlew
+
+      - name: Build and test controller
+        working-directory: controller
+        run: ./gradlew clean build --no-daemon
+
+
+  worker:
+    name: C++ Worker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            protobuf-compiler \
+            protobuf-compiler-grpc \
+            libprotobuf-dev \
+            libgrpc++-dev
+
+      - name: Configure worker
+        working-directory: worker
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build worker
+        working-directory: worker
+        run: cmake --build build --parallel 2
+
+
+  diagrams:
+    name: Documentation diagrams
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Render diagrams
+        run: ./scripts/render-diagrams.sh
+
+      - name: Verify generated SVGs are current
+        run: |
+          if ! git diff --exit-code -- docs/diagrams/*.svg; then
+            echo
+            echo "Generated SVG diagrams are out of date."
+            echo "Run ./scripts/render-diagrams.sh and commit the results."
+            exit 1
+          fi
