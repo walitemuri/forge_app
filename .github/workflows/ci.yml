@@ -370,6 +370,10 @@ jobs:
         run: |
           python3 scripts/dag_smoke_test.py
 
+      - name: Verify persistent execution timeline
+        run: |
+          python3 scripts/timeline_smoke_test.py
+
       - name: Show controller log
         if: always()
         run: |
