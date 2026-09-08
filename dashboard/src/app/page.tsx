@@ -139,7 +139,16 @@ export default async function Home() {
         <div className="grid gap-6 lg:grid-cols-2">
           <section className="rounded-xl border border-zinc-800 bg-zinc-950">
             <div className="border-b border-zinc-800 px-5 py-4">
-              <h2 className="font-medium">Workers</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="font-medium">Workers</h2>
+
+                <Link
+                  href="/workers"
+                  className="text-xs text-zinc-500 transition hover:text-zinc-200"
+                >
+                  View all
+                </Link>
+              </div>
 
               <p className="mt-1 text-xs text-zinc-500">
                 Connected execution agents
