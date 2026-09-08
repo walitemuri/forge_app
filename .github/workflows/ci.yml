@@ -5,14 +5,25 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+
+  # ============================================================
+  # Java / Spring Boot controller
+  # ============================================================
+
   controller:
     name: Controller
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     services:
       postgres:
@@ -30,7 +41,7 @@ jobs:
           --health-retries 10
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Java 21
@@ -39,61 +50,161 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: gradle
+          cache-dependency-path: |
+            controller/*.gradle
+            controller/*.gradle.kts
+            controller/gradle/wrapper/gradle-wrapper.properties
 
       - name: Make Gradle wrapper executable
-        working-directory: controller
-        run: chmod +x gradlew
+        run: chmod +x controller/gradlew
 
       - name: Build and test controller
         working-directory: controller
         run: ./gradlew clean build --no-daemon
 
 
+  # ============================================================
+  # C++ worker
+  # ============================================================
+
   worker:
     name: C++ Worker
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install C++ dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
             cmake \
+            ninja-build \
             pkg-config \
             protobuf-compiler \
             protobuf-compiler-grpc \
             libprotobuf-dev \
+            libgrpc-dev \
             libgrpc++-dev
 
       - name: Configure worker
-        working-directory: worker
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: |
+          cmake \
+            -S worker \
+            -B worker/build-ci \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release
 
       - name: Build worker
-        working-directory: worker
-        run: cmake --build build --parallel 2
+        run: |
+          cmake \
+            --build worker/build-ci \
+            --parallel 2
+
+      - name: Verify worker binary
+        run: test -x worker/build-ci/forge-worker
 
 
-  diagrams:
-    name: Documentation diagrams
-    runs-on: ubuntu-latest
+  # ============================================================
+  # Documentation / architecture diagrams
+  # ============================================================
+
+  documentation:
+    name: Documentation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Render diagrams
+      - name: Make renderer executable
+        run: chmod +x scripts/render-diagrams.sh
+
+      - name: Render architecture diagrams
         run: ./scripts/render-diagrams.sh
 
-      - name: Verify generated SVGs are current
+      - name: Validate generated diagrams
+        shell: bash
         run: |
-          if ! git diff --exit-code -- docs/diagrams/*.svg; then
-            echo
-            echo "Generated SVG diagrams are out of date."
-            echo "Run ./scripts/render-diagrams.sh and commit the results."
+          set -euo pipefail
+
+          diagrams=(
+            system-overview
+            component-view
+            successful-execution
+            task-lifecycle
+            worker-authority-recovery
+            persistence-model
+          )
+
+          count=0
+
+          for diagram in "${diagrams[@]}"; do
+            for mode in light dark; do
+              file="docs/diagrams/${diagram}-${mode}.svg"
+
+              if [[ ! -f "$file" ]]; then
+                echo "Missing: $file"
+                exit 1
+              fi
+
+              if ! grep -q '<svg' "$file"; then
+                echo "Invalid SVG: $file"
+                exit 1
+              fi
+
+              echo "PASS $file"
+              count=$((count + 1))
+            done
+          done
+
+          if [[ "$count" -ne 12 ]]; then
+            echo "Expected 12 SVGs, validated $count"
             exit 1
           fi
+
+          echo "Validated all 12 architecture diagrams"
+
+      - name: Validate Markdown diagram references
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          documents = [
+              Path("README.md"),
+              Path("docs/architecture.md"),
+          ]
+
+          missing = []
+
+          for document in documents:
+              text = document.read_text()
+
+              references = re.findall(
+                  r'(?:src|srcset)="([^"]+\.svg)"',
+                  text,
+              )
+
+              for reference in references:
+                  target = document.parent / reference
+
+                  if not target.exists():
+                      missing.append(
+                          f"{document}: {reference}"
+                      )
+
+          if missing:
+              print("Broken diagram references:")
+
+              for item in missing:
+                  print(f"  {item}")
+
+              raise SystemExit(1)
+
+          print("PASS: all Markdown diagram references resolve")
+          PY
