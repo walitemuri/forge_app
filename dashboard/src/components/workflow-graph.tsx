@@ -1,14 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useId, useMemo, useState } from "react";
 import {
   Background,
+  BaseEdge,
   Controls,
   Edge,
+  EdgeProps,
+  getSmoothStepPath,
+  Handle,
   Node,
+  NodeProps,
+  Panel,
+  Position,
   ReactFlow,
 } from "@xyflow/react";
-import { X } from "lucide-react";
+import {
+  Activity,
+  Check,
+  CircleDot,
+  Clock3,
+  Cpu,
+  X,
+  Zap,
+} from "lucide-react";
 
 import type {
   ForgeExecutionEvent,
@@ -36,6 +51,36 @@ interface AttemptSummary {
   durationMs: number | null;
 }
 
+interface TaskNodeData extends Record<string, unknown> {
+  task: ForgeWorkflowTask;
+  summary: TaskExecutionSummary;
+  order: number;
+  accent: string;
+  accentRgb: string;
+}
+
+interface ExecutionEdgeData extends Record<string, unknown> {
+  active: boolean;
+  complete: boolean;
+  color: string;
+  delay: number;
+}
+interface TaskTopology {
+  key: string;
+  dependsOn: string[];
+}
+
+
+type TaskFlowNode = Node<
+  TaskNodeData,
+  "task"
+>;
+
+type ExecutionFlowEdge = Edge<
+  ExecutionEdgeData,
+  "execution"
+>;
+
 function statusAppearance(status: string) {
   switch (status) {
     case "SUCCEEDED":
@@ -43,6 +88,7 @@ function statusAppearance(status: string) {
         border: "#3f6212",
         background: "#111a0b",
         color: "#bef264",
+        rgb: "163, 230, 53",
       };
 
     case "FAILED":
@@ -51,6 +97,7 @@ function statusAppearance(status: string) {
         border: "#7f1d1d",
         background: "#1c0c0c",
         color: "#fca5a5",
+        rgb: "248, 113, 113",
       };
 
     case "RUNNING":
@@ -58,6 +105,7 @@ function statusAppearance(status: string) {
         border: "#1d4ed8",
         background: "#0c1424",
         color: "#93c5fd",
+        rgb: "96, 165, 250",
       };
 
     case "DISPATCHED":
@@ -65,6 +113,7 @@ function statusAppearance(status: string) {
         border: "#075985",
         background: "#0b1720",
         color: "#7dd3fc",
+        rgb: "56, 189, 248",
       };
 
     case "PENDING":
@@ -72,6 +121,7 @@ function statusAppearance(status: string) {
         border: "#854d0e",
         background: "#1c1507",
         color: "#fde68a",
+        rgb: "250, 204, 21",
       };
 
     case "BLOCKED":
@@ -79,6 +129,7 @@ function statusAppearance(status: string) {
         border: "#52525b",
         background: "#18181b",
         color: "#d4d4d8",
+        rgb: "161, 161, 170",
       };
 
     default:
@@ -86,7 +137,23 @@ function statusAppearance(status: string) {
         border: "#52525b",
         background: "#18181b",
         color: "#a1a1aa",
+        rgb: "161, 161, 170",
       };
+  }
+}
+
+function statusIcon(status: string) {
+  switch (status) {
+    case "SUCCEEDED":
+      return <Check className="h-3 w-3" />;
+    case "RUNNING":
+    case "DISPATCHED":
+      return <Zap className="h-3 w-3" />;
+    case "FAILED":
+    case "LOST":
+      return <X className="h-3 w-3" />;
+    default:
+      return <Clock3 className="h-3 w-3" />;
   }
 }
 
@@ -340,11 +407,199 @@ function formatTimestamp(
   );
 }
 
+function TaskNode({
+  data,
+  selected,
+}: NodeProps<TaskFlowNode>) {
+  const { task, summary } = data;
+  const isLive = [
+    "RUNNING",
+    "DISPATCHED",
+  ].includes(task.status);
+
+  return (
+    <div
+      className={`execution-node execution-node--${task.status.toLowerCase()} ${
+        selected
+          ? "execution-node--selected"
+          : ""
+      }`}
+      style={{
+        "--node-accent": data.accent,
+        "--node-accent-rgb": data.accentRgb,
+        "--node-delay": `${data.order * 80 + 120}ms`,
+      } as React.CSSProperties}
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="execution-handle execution-handle--target"
+      />
+
+      <div className="execution-node__glow" />
+      <div className="execution-node__scan" />
+
+      <div className="execution-node__header">
+        <div className="min-w-0">
+          <div className="execution-node__eyebrow">
+            <Cpu className="h-3 w-3" />
+            EXECUTION UNIT
+          </div>
+          <div className="truncate font-mono text-sm font-semibold text-zinc-100">
+            {task.key}
+          </div>
+        </div>
+
+        <span className="execution-node__status">
+          <span
+            className={`execution-node__beacon ${
+              isLive
+                ? "execution-node__beacon--live"
+                : ""
+            }`}
+          >
+            {statusIcon(task.status)}
+          </span>
+          {task.status}
+        </span>
+      </div>
+
+      <div className="execution-node__id">
+        {task.taskId}
+      </div>
+
+      <div className="execution-node__telemetry">
+        <div>
+          <span>Worker</span>
+          <strong title={summary.worker ?? "Unassigned"}>
+            {summary.worker ?? "standby"}
+          </strong>
+        </div>
+        <div>
+          <span>Attempts</span>
+          <strong>{summary.attempts}</strong>
+        </div>
+        <div>
+          <span>Runtime</span>
+          <strong>
+            {formatDuration(summary.durationMs)}
+          </strong>
+        </div>
+      </div>
+
+      <div className="execution-node__rail">
+        <span />
+      </div>
+
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="execution-handle execution-handle--source"
+      />
+    </div>
+  );
+}
+
+const ExecutionEdge = memo(function ExecutionEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  markerEnd,
+  data,
+}: EdgeProps<ExecutionFlowEdge>) {
+  const glowId = useId();
+  const [edgePath] =
+    getSmoothStepPath({
+      sourceX,
+      sourceY,
+      targetX,
+      targetY,
+      sourcePosition,
+      targetPosition,
+      borderRadius: 22,
+      // Keep the two end offsets from overlapping on short connectors.
+      offset: Math.min(34, Math.max(0, (targetX - sourceX) / 2 - 1)),
+    });
+
+  const active = data?.active ?? false;
+  const complete = data?.complete ?? false;
+  const color = data?.color ?? "#71717a";
+  const delay = data?.delay ?? 0;
+
+  return (
+    <g
+      className={`execution-edge ${
+        active
+          ? "execution-edge--active"
+          : ""
+      } ${
+        complete
+          ? "execution-edge--complete"
+          : ""
+      }`}
+      style={{
+        "--edge-color": color,
+      } as React.CSSProperties}
+    >
+      <path
+        d={edgePath}
+        className="execution-edge__halo"
+      />
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        markerEnd={markerEnd}
+        className="execution-edge__core"
+      />
+      <defs>
+        <radialGradient id={glowId}>
+          <stop offset="0" stopColor={color} stopOpacity="0.9" />
+          <stop offset="0.3" stopColor={color} stopOpacity="0.4" />
+          <stop offset="1" stopColor={color} stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      {/* Move one light along the actual curve without React animation ticks.
+          Stable edges preserve its position through task-state refreshes. */}
+      <g className="execution-edge__traveller" aria-hidden="true">
+        <circle r="9" fill={`url(#${glowId})`} />
+        <circle r="2.4" fill="#ecfeff" />
+        <animateMotion
+          path={edgePath}
+          dur="2s"
+          begin={`${delay}s`}
+          repeatCount="indefinite"
+          calcMode="paced"
+        />
+        <animate
+          attributeName="opacity"
+          values="0;1;1;0"
+          keyTimes="0;0.05;0.95;1"
+          dur="2s"
+          begin={`${delay}s`}
+          repeatCount="indefinite"
+        />
+      </g>
+    </g>
+  );
+});
+
+const nodeTypes = {
+  task: TaskNode,
+};
+
+const edgeTypes = {
+  execution: ExecutionEdge,
+};
+
 function buildNodes(
   tasks: ForgeWorkflowTask[],
   events: ForgeExecutionEvent[],
   selectedTaskKey: string | null,
-): Node[] {
+): TaskFlowNode[] {
   const levels =
     calculateLevels(tasks);
 
@@ -369,7 +624,7 @@ function buildNodes(
     );
   }
 
-  return tasks.map((task) => {
+  return tasks.map((task, order) => {
     const level =
       levels.get(task.key) ?? 0;
 
@@ -405,84 +660,20 @@ function buildNodes(
       },
 
       data: {
-        label: (
-          <div className="w-[230px] text-left">
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <span className="font-mono text-sm font-semibold text-zinc-100">
-                {task.key}
-              </span>
-
-              <span
-                className="rounded px-1.5 py-0.5 text-[10px] font-medium"
-                style={{
-                  color:
-                    appearance.color,
-                }}
-              >
-                {task.status}
-              </span>
-            </div>
-
-            <div className="truncate font-mono text-[10px] text-zinc-600">
-              {task.taskId}
-            </div>
-
-            <div className="mt-4 grid grid-cols-[70px_1fr] gap-y-2 border-t border-zinc-800 pt-3 text-xs">
-              <span className="text-zinc-600">
-                Worker
-              </span>
-
-              <span className="truncate font-mono text-zinc-300">
-                {summary.worker ??
-                  "—"}
-              </span>
-
-              <span className="text-zinc-600">
-                Attempts
-              </span>
-
-              <span className="font-mono text-zinc-300">
-                {summary.attempts}
-              </span>
-
-              <span className="text-zinc-600">
-                Duration
-              </span>
-
-              <span className="font-mono text-zinc-300">
-                {formatDuration(
-                  summary.durationMs,
-                )}
-              </span>
-            </div>
-          </div>
-        ),
+        task,
+        summary,
+        order,
+        accent: appearance.color,
+        accentRgb: appearance.rgb,
       },
-
-      style: {
-        width: 260,
-        border:
-          `1px solid ${appearance.border}`,
-        background:
-          appearance.background,
-        borderRadius: 10,
-        padding: 14,
-        color:
-          appearance.color,
-        cursor: "pointer",
-        boxShadow:
-          selected
-            ? "0 0 0 2px rgba(161,161,170,0.35)"
-            : "none",
-      },
+      type: "task",
+      selected,
     };
   });
 }
 
-function buildEdges(
-  tasks: ForgeWorkflowTask[],
-): Edge[] {
-  const edges: Edge[] = [];
+function buildEdges(tasks: TaskTopology[]): ExecutionFlowEdge[] {
+  const edges: ExecutionFlowEdge[] = [];
 
   for (const task of tasks) {
     for (
@@ -494,7 +685,16 @@ function buildEdges(
           `${dependency}-${task.key}`,
         source: dependency,
         target: task.key,
-        type: "smoothstep",
+        type: "execution",
+        zIndex: 2,
+        data: {
+          active: false,
+          complete: false,
+          color: "#67e8f9",
+          delay:
+            (edges.length % 5) *
+            -0.42,
+        },
       });
     }
   }
@@ -518,7 +718,7 @@ function AttemptPanel({
     );
 
   return (
-    <aside className="absolute right-4 top-4 z-20 w-[350px] overflow-hidden rounded-xl border border-zinc-700 bg-[#0d0d10]/95 shadow-2xl backdrop-blur">
+    <aside className="attempt-panel absolute inset-x-3 top-3 z-20 overflow-hidden rounded-xl border border-zinc-700 bg-[#0d0d10]/95 shadow-2xl backdrop-blur sm:left-auto sm:right-4 sm:top-4 sm:w-[350px]">
       <div className="flex items-start justify-between border-b border-zinc-800 px-4 py-4">
         <div>
           <div className="font-mono text-sm font-semibold text-zinc-100">
@@ -573,7 +773,10 @@ function AttemptPanel({
                     key={
                       attempt.attemptId
                     }
-                    className="rounded-lg border border-zinc-800 bg-zinc-950 p-4"
+                    className="attempt-panel__card rounded-lg border border-zinc-800 bg-zinc-950 p-4"
+                    style={{
+                      "--attempt-delay": `${attempt.number * 60 + 90}ms`,
+                    } as React.CSSProperties}
                   >
                     <div className="mb-4 flex items-center justify-between">
                       <span className="text-sm font-medium text-zinc-200">
@@ -657,28 +860,94 @@ export function WorkflowGraph({
       null,
     );
 
+  /*
+   * router.refresh() gives us fresh array identities every second. Parse
+   * content-addressed snapshots so React Flow only receives new graph
+   * objects when the underlying data actually changes.
+   */
+  const tasksSnapshot =
+    JSON.stringify(tasks);
+  const eventsSnapshot =
+    JSON.stringify(events);
+  const topologySnapshot =
+    JSON.stringify(
+      tasks.map((task) => ({
+        key: task.key,
+        dependsOn: task.dependsOn,
+      })),
+    );
+
+  const stableTasks = useMemo(
+    () =>
+      JSON.parse(
+        tasksSnapshot,
+      ) as ForgeWorkflowTask[],
+    [tasksSnapshot],
+  );
+  const stableEvents = useMemo(
+    () =>
+      JSON.parse(
+        eventsSnapshot,
+      ) as ForgeExecutionEvent[],
+    [eventsSnapshot],
+  );
+  const stableTopology = useMemo(
+    () =>
+      JSON.parse(
+        topologySnapshot,
+      ) as TaskTopology[],
+    [topologySnapshot],
+  );
+
   const selectedTask =
-    tasks.find(
+    stableTasks.find(
       (task) =>
         task.key ===
         selectedTaskKey,
     ) ?? null;
 
-  const nodes =
-    buildNodes(
-      tasks,
-      events,
+  const nodes = useMemo(
+    () =>
+      buildNodes(
+        stableTasks,
+        stableEvents,
+        selectedTaskKey,
+      ),
+    [
+      stableTasks,
+      stableEvents,
       selectedTaskKey,
-    );
+    ],
+  );
 
-  const edges =
-    buildEdges(tasks);
+  const edges = useMemo(
+    () => buildEdges(stableTopology),
+    [stableTopology],
+  );
+
+  const liveTasks = tasks.filter(
+    (task) =>
+      [
+        "RUNNING",
+        "DISPATCHED",
+      ].includes(task.status),
+  ).length;
+
+  const completedTasks = tasks.filter(
+    (task) =>
+      task.status === "SUCCEEDED",
+  ).length;
 
   return (
-    <div className="relative h-[560px] w-full">
+    <div className="execution-graph relative h-[560px] w-full">
+      <div className="execution-graph__aurora execution-graph__aurora--one" />
+      <div className="execution-graph__aurora execution-graph__aurora--two" />
+
       <ReactFlow
         nodes={nodes}
         edges={edges}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         fitViewOptions={{
           padding: 0.2,
@@ -689,6 +958,9 @@ export function WorkflowGraph({
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable
+        onPaneClick={() =>
+          setSelectedTaskKey(null)
+        }
         onNodeClick={(
           _event,
           node,
@@ -701,17 +973,61 @@ export function WorkflowGraph({
         <Background
           gap={24}
           size={1}
+          color="#3f3f46"
         />
+
+        <Panel
+          position="top-left"
+          className="execution-hud"
+        >
+          <div className="execution-hud__signal">
+            <Activity className="h-3.5 w-3.5" />
+            <span>LIVE TOPOLOGY</span>
+          </div>
+          <div className="execution-hud__metrics">
+            <span>
+              <strong>{liveTasks}</strong>
+              active
+            </span>
+            <span>
+              <strong>{completedTasks}</strong>
+              complete
+            </span>
+            <span>
+              <strong>{edges.length}</strong>
+              links
+            </span>
+          </div>
+        </Panel>
+
+        <Panel
+          position="bottom-right"
+          className="execution-legend"
+        >
+          <span>
+            <i className="execution-legend__dot execution-legend__dot--live" />
+            live
+          </span>
+          <span>
+            <i className="execution-legend__dot execution-legend__dot--done" />
+            complete
+          </span>
+          <span>
+            <CircleDot className="h-3 w-3" />
+            select a node
+          </span>
+        </Panel>
 
         <Controls
           showInteractive={false}
+          className="execution-controls"
         />
       </ReactFlow>
 
       {selectedTask && (
         <AttemptPanel
           task={selectedTask}
-          events={events}
+          events={stableEvents}
           onClose={() =>
             setSelectedTaskKey(
               null,

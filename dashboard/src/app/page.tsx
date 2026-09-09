@@ -1,7 +1,6 @@
 import Link from "next/link";
 import {
   Activity,
-  Boxes,
   CircleCheck,
   CircleX,
   LayoutTemplate,
@@ -76,24 +75,20 @@ export default async function Home() {
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100">
       <div className="mx-auto max-w-7xl px-6 py-8">
-        <header className="mb-10 flex items-center justify-between">
+        <header className="mb-10 flex flex-wrap items-center justify-between gap-6">
           <div>
-            <div className="mb-2 flex items-center gap-2">
-              <Boxes className="h-5 w-5 text-zinc-400" />
-
-              <span className="text-sm font-medium text-zinc-400">Forge</span>
-            </div>
+            <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-400">Workspace overview</div>
 
             <h1 className="text-3xl font-semibold tracking-tight">
               Control Plane
             </h1>
 
             <p className="mt-2 text-sm text-zinc-500">
-              Distributed workflow execution
+              Your workers, workflows, and execution activity at a glance.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Link
               href="/templates"
               className="inline-flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-400 transition hover:border-zinc-700 hover:text-zinc-100"
@@ -238,7 +233,7 @@ function Metric({
   icon: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-5">
+    <div className="forge-metric rounded-xl border border-zinc-800 bg-zinc-950 p-5">
       <div className="flex items-center gap-2 text-sm text-zinc-500">
         {icon}
         {label}

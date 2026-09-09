@@ -41,7 +41,7 @@ function StatusBadge({
 }) {
   return (
     <span
-      className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusClasses(
+      className={`status-badge status-badge--${status.toLowerCase()} inline-flex rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusClasses(
         status,
       )}`}
     >
@@ -109,21 +109,21 @@ export default async function WorkflowPage({
   ].includes(workflow.status);
 
   return (
-    <main className="min-h-screen bg-[#09090b] text-zinc-100">
+    <main className="forge-page min-h-screen bg-[#09090b] text-zinc-100">
       <AutoRefresh
         enabled={isActive}
         intervalMs={1000}
       />
-      <div className="mx-auto max-w-7xl px-6 py-8">
+      <div className="forge-page__content mx-auto max-w-7xl px-6 py-8">
         <Link
           href="/"
-          className="mb-8 inline-flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-200"
+          className="forge-back-link mb-8 inline-flex items-center gap-2 text-sm text-zinc-500 transition hover:text-zinc-200"
         >
           <ArrowLeft className="h-4 w-4" />
           Control Plane
         </Link>
 
-        <header className="mb-8 flex flex-col gap-5 border-b border-zinc-800 pb-8 md:flex-row md:items-start md:justify-between">
+        <header className="workflow-header mb-8 flex flex-col gap-5 border-b border-zinc-800 pb-8 md:flex-row md:items-start md:justify-between">
           <div>
             <div className="mb-3 flex items-center gap-2 text-sm text-zinc-500">
               <GitBranch className="h-4 w-4" />
@@ -159,7 +159,7 @@ export default async function WorkflowPage({
           />
         </header>
 
-        <section className="mb-8 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
+        <section className="execution-graph-shell mb-8 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
           <div className="border-b border-zinc-800 px-5 py-4">
             <h2 className="font-medium">
               Execution Graph
@@ -176,7 +176,7 @@ export default async function WorkflowPage({
           />
         </section>
 
-        <section className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
+        <section className="timeline-shell overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
           <div className="border-b border-zinc-800 px-5 py-4">
             <h2 className="font-medium">
               Execution Timeline
@@ -188,10 +188,13 @@ export default async function WorkflowPage({
           </div>
 
           <div className="divide-y divide-zinc-900">
-            {events.map((event) => (
+            {events.map((event, index) => (
               <div
                 key={event.id}
-                className="grid gap-3 px-5 py-4 md:grid-cols-[110px_180px_1fr]"
+                className="timeline-event grid gap-3 px-5 py-4 md:grid-cols-[110px_180px_1fr]"
+                style={{
+                  "--event-delay": `${Math.min(index, 12) * 36 + 280}ms`,
+                } as React.CSSProperties}
               >
                 <div className="font-mono text-xs text-zinc-600">
                   #
