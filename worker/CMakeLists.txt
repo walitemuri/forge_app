@@ -4,11 +4,38 @@ project(forge_worker LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+include(CTest)
 
 if(APPLE)
     find_package(Protobuf CONFIG REQUIRED)
 else()
     find_package(Protobuf REQUIRED)
+
+    add_executable(
+        process-executor-output-limit-test
+
+        tests/ProcessExecutorOutputLimitTest.cpp
+        src/ProcessExecutor.cpp
+    )
+
+
+    target_include_directories(
+        process-executor-output-limit-test
+
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+
+
+    add_test(
+        NAME
+            process-executor-output-limit-test
+
+        COMMAND
+            process-executor-output-limit-test
+    )
+
+
 endif()
 
 find_package(gRPC CONFIG REQUIRED)
@@ -74,3 +101,31 @@ target_link_libraries(
         gRPC::grpc++
         protobuf::libprotobuf
 )
+
+if(BUILD_TESTING)
+
+    add_executable(
+        process-executor-test
+
+        tests/ProcessExecutorTest.cpp
+        src/ProcessExecutor.cpp
+    )
+
+
+    target_include_directories(
+        process-executor-test
+
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+
+
+    add_test(
+        NAME
+            process-executor-test
+
+        COMMAND
+            process-executor-test
+    )
+
+endif()

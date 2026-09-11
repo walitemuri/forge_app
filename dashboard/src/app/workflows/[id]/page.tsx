@@ -6,6 +6,7 @@ import {
 
 import { AutoRefresh } from "@/components/auto-refresh";
 import { WorkflowGraph } from "@/components/workflow-graph";
+import { VideoArtifact } from "@/components/video-artifact";
 import { forgeFetch } from "@/lib/forge";
 import type {
   ForgeExecutionEvent,
@@ -106,13 +107,19 @@ export default async function WorkflowPage({
     "PENDING",
     "DISPATCHED",
     "RUNNING",
-  ].includes(workflow.status);
+  ].includes(workflow.status) || workflow.tasks.some(task =>
+    ["CREATED", "BLOCKED", "PENDING", "DISPATCHED", "RUNNING"].includes(task.status),
+  );
 
   return (
     <main className="forge-page min-h-screen bg-[#09090b] text-zinc-100">
       <AutoRefresh
         enabled={isActive}
-        intervalMs={1000}
+        intervalMs={
+          workflow.name.startsWith("controller-crash-recovery-")
+            ? 10000
+            : 1000
+        }
       />
       <div className="forge-page__content mx-auto max-w-7xl px-6 py-8">
         <Link
@@ -175,6 +182,11 @@ export default async function WorkflowPage({
             events={events}
           />
         </section>
+
+        <VideoArtifact
+          workflowName={workflow.name}
+          status={workflow.status}
+        />
 
         <section className="timeline-shell overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
           <div className="border-b border-zinc-800 px-5 py-4">

@@ -6,6 +6,8 @@ import Link from "next/link";
 
 import { TemplateLauncher } from "./template-launcher";
 
+export const dynamic = "force-dynamic";
+
 export default function TemplatesPage() {
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100">
@@ -34,6 +36,11 @@ export default function TemplatesPage() {
             retry, and recovery behavior.
           </p>
         </header>
+
+        <div className="mb-8 rounded-xl border border-blue-950 bg-blue-950/20 p-5 text-sm leading-6 text-zinc-300">
+          <p>Start with Parallel Processing to watch the DAG, then try Failure &amp; Retry Recovery to inspect attempt history. The full showcase combines both with an intentionally failed branch.</p>
+          {process.env.FORGE_PUBLIC_DEMO === "true" && <p className="mt-2 text-zinc-400">This is a shared live demo: runs are visible to every visitor. Up to three workflows run at once, with a short pause between launches and a daily compute budget.</p>}
+        </div>
 
         <TemplateLauncher />
       </div>

@@ -6,6 +6,7 @@ export async function forgeFetch<T>(
 ): Promise<T> {
   const response = await fetch(`${FORGE_API_URL}${path}`, {
     ...options,
+    signal: options?.signal ?? AbortSignal.timeout(15000),
     cache: "no-store",
     headers: {
       "Content-Type": "application/json",

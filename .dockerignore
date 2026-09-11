@@ -1,0 +1,35 @@
+.git
+.gitignore
+.agents
+.codex
+**/.env
+**/.env.*
+!**/.env.example
+
+# C++ build artifacts
+worker/build
+worker/build-*
+worker/**/CMakeCache.txt
+worker/**/CMakeFiles
+
+# Java build artifacts
+controller/build
+controller/.gradle
+
+# Next.js build artifacts
+dashboard/node_modules
+dashboard/.next
+dashboard/tsconfig.tsbuildinfo
+
+# Local generated/demo data
+demo/video
+!demo/
+!demo/video/
+!demo/video/deploy/
+!demo/video/deploy/tears-of-steel-excerpt.mp4
+
+# Misc
+*.log
+__pycache__
+*.py[cod]
+.DS_Store

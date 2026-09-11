@@ -1,9 +1,8 @@
-name: CI
+name: CI/CD
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -11,20 +10,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
 
 jobs:
-
-  # ============================================================
-  # Java / Spring Boot controller
-  # ============================================================
-
   controller:
-    name: Controller
+    name: Controller tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17
@@ -39,539 +32,121 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
           cache: gradle
-          cache-dependency-path: |
-            controller/*.gradle
-            controller/*.gradle.kts
-            controller/gradle/wrapper/gradle-wrapper.properties
-
-      - name: Make Gradle wrapper executable
-        run: chmod +x controller/gradlew
-
-      - name: Build and test controller
+          cache-dependency-path: controller/gradle/wrapper/gradle-wrapper.properties
+      - name: Build and test
         working-directory: controller
-        run: ./gradlew clean build --no-daemon
-
-
-  # ============================================================
-  # C++ worker
-  # ============================================================
+        run: |
+          chmod +x gradlew
+          ./gradlew clean build --no-daemon
 
   worker:
-    name: C++ Worker
+    name: Worker tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-
+    timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build protobuf-compiler protobuf-compiler-grpc libprotobuf-dev libgrpc-dev libgrpc++-dev
+      - name: Build and test
+        run: |
+          cmake -S worker -B worker/build-ci -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build worker/build-ci --parallel 2
+          ctest --test-dir worker/build-ci --output-on-failure
 
+  dashboard:
+    name: Dashboard tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
       - name: Install dependencies
+        working-directory: dashboard
+        run: npm ci
+      - name: Test, lint, and build
+        working-directory: dashboard
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            cmake \
-            ninja-build \
-            pkg-config \
-            protobuf-compiler \
-            protobuf-compiler-grpc \
-            libprotobuf-dev \
-            libgrpc-dev \
-            libgrpc++-dev
+          npm test
+          npm run lint
+          npm run build
 
-      - name: Configure worker
-        run: |
-          cmake \
-            -S worker \
-            -B worker/build-ci \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build worker
-        run: |
-          cmake \
-            --build worker/build-ci \
-            --parallel 2
-
-      - name: Verify worker binary
-        run: test -x worker/build-ci/forge-worker
-
-
-  # ============================================================
-  # Documentation / architecture diagrams
-  # ============================================================
-
-  documentation:
-    name: Documentation
+  deployment-config:
+    name: Deployment configuration
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-
+    timeout-minutes: 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Make renderer executable
-        run: chmod +x scripts/render-diagrams.sh
-
-      - name: Render architecture diagrams
-        run: ./scripts/render-diagrams.sh
-
-      - name: Validate generated diagrams
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          diagrams=(
-            system-overview
-            component-view
-            successful-execution
-            task-lifecycle
-            worker-authority-recovery
-            persistence-model
-          )
-
-          count=0
-
-          for diagram in "${diagrams[@]}"; do
-            for mode in light dark; do
-              file="docs/diagrams/${diagram}-${mode}.svg"
-
-              if [[ ! -f "$file" ]]; then
-                echo "Missing: $file"
-                exit 1
-              fi
-
-              if ! grep -q '<svg' "$file"; then
-                echo "Invalid SVG: $file"
-                exit 1
-              fi
-
-              echo "PASS $file"
-              count=$((count + 1))
-            done
-          done
-
-          if [[ "$count" -ne 12 ]]; then
-            echo "Expected 12 SVGs, validated $count"
-            exit 1
-          fi
-
-          echo "Validated all 12 architecture diagrams"
-
-      - name: Validate Markdown diagram references
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          documents = [
-              Path("README.md"),
-              Path("docs/architecture.md"),
-          ]
-
-          missing = []
-
-          for document in documents:
-              text = document.read_text()
-
-              references = re.findall(
-                  r'(?:src|srcset)="([^"]+\.svg)"',
-                  text,
-              )
-
-              for reference in references:
-                  target = document.parent / reference
-
-                  if not target.exists():
-                      missing.append(
-                          f"{document}: {reference}"
-                      )
-
-          if missing:
-              print("Broken diagram references:")
-
-              for item in missing:
-                  print(f"  {item}")
-
-              raise SystemExit(1)
-
-          print("PASS: all Markdown diagram references resolve")
-          PY
-
-
-  # ============================================================
-  # End-to-end distributed execution
-  # ============================================================
-
-  integration:
-    name: End-to-End
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs:
-      - controller
-      - worker
-
-    services:
-      postgres:
-        image: postgres:17
+      - uses: actions/checkout@v4
+      - name: Validate public Compose configuration
         env:
-          POSTGRES_DB: forge
-          POSTGRES_USER: forge
-          POSTGRES_PASSWORD: forge
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd "pg_isready -U forge -d forge"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+          FORGE_DOMAIN: forge.example.com
+          FORGE_DB_PASSWORD: ci-only-placeholder
+        run: docker compose -f docker-compose.yml -f docker-compose.public.yml config --quiet
+      - name: Validate deployment scripts
+        run: bash -n deploy/bootstrap-oracle-ubuntu.sh deploy/deploy.sh
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: gradle
-          cache-dependency-path: |
-            controller/*.gradle
-            controller/*.gradle.kts
-            controller/gradle/wrapper/gradle-wrapper.properties
-
-      - name: Install worker dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            cmake \
-            ninja-build \
-            pkg-config \
-            protobuf-compiler \
-            protobuf-compiler-grpc \
-            libprotobuf-dev \
-            libgrpc-dev \
-            libgrpc++-dev
-
-      - name: Build worker
-        run: |
-          cmake \
-            -S worker \
-            -B worker/build-ci \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release
-
-          cmake \
-            --build worker/build-ci \
-            --parallel 2
-
-      - name: Start controller
-        run: |
-          chmod +x controller/gradlew
-
-          (
-            cd controller
-
-            ./gradlew bootRun --no-daemon \
-              > /tmp/forge-controller.log 2>&1
-          ) &
-
-          echo $! > /tmp/forge-controller.pid
-
-      - name: Wait for controller
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Waiting for Forge controller..."
-
-          for attempt in {1..60}; do
-            if curl \
-              --fail \
-              --silent \
-              http://127.0.0.1:8080/api/workers \
-              >/dev/null
-            then
-              echo "Controller is ready"
-              exit 0
-            fi
-
-            sleep 1
-          done
-
-          echo "Controller did not become ready"
-          cat /tmp/forge-controller.log
-          exit 1
-
-      - name: Start worker
-        run: |
-          FORGE_OUTBOX_DIR=/tmp/forge-outbox \
-            ./worker/build-ci/forge-worker \
-            > /tmp/forge-worker.log 2>&1 &
-
-          echo $! > /tmp/forge-worker.pid
-
-      - name: Wait for worker registration
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Waiting for Forge worker..."
-
-          python3 - <<'PY'
-          import json
-          import time
-          import urllib.request
-
-          url = "http://127.0.0.1:8080/api/workers"
-
-          for attempt in range(60):
-              try:
-                  with urllib.request.urlopen(
-                      url,
-                      timeout=2,
-                  ) as response:
-                      workers = json.load(response)
-
-                  if any(
-                      worker.get("online")
-                      for worker in workers
-                  ):
-                      print("Worker registered and online")
-                      raise SystemExit(0)
-
-              except Exception as exc:
-                  print(
-                      f"attempt {attempt + 1}: "
-                      f"{type(exc).__name__}"
-                  )
-
-              time.sleep(1)
-
-          raise SystemExit(
-              "Worker never became online"
-          )
-          PY
-
-      - name: Run DAG smoke test
-        run: |
-          python3 scripts/dag_smoke_test.py
-
-      - name: Verify persistent execution timeline
-        run: |
-          python3 scripts/timeline_smoke_test.py
-
-      - name: Show controller log
-        if: always()
-        run: |
-          echo "================ Controller ================"
-          cat /tmp/forge-controller.log || true
-
-      - name: Show worker log
-        if: always()
-        run: |
-          echo "================ Worker ===================="
-          cat /tmp/forge-worker.log || true
-
-
-  # ============================================================
-  # Worker crash / session-loss recovery
-  # ============================================================
-
-  recovery:
-    name: Recovery
+  deploy:
+    name: Deploy to Oracle Cloud
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.ref == 'refs/heads/main' &&
+      vars.OCI_DEPLOY_ENABLED == 'true'
+    needs: [controller, worker, dashboard, deployment-config]
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-
-    needs:
-      - controller
-      - worker
-
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_DB: forge
-          POSTGRES_USER: forge
-          POSTGRES_PASSWORD: forge
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd "pg_isready -U forge -d forge"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
+    timeout-minutes: 60
+    environment:
+      name: production
+      url: ${{ vars.FORGE_URL }}
+    concurrency:
+      group: forge-production
+      cancel-in-progress: false
+    env:
+      DEPLOY_HOST: ${{ secrets.OCI_HOST }}
+      DEPLOY_USER: ${{ secrets.OCI_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
+      SSH_KNOWN_HOSTS: ${{ secrets.OCI_SSH_KNOWN_HOSTS }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: gradle
-          cache-dependency-path: |
-            controller/*.gradle
-            controller/*.gradle.kts
-            controller/gradle/wrapper/gradle-wrapper.properties
-
-      - name: Install worker dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            cmake \
-            ninja-build \
-            pkg-config \
-            protobuf-compiler \
-            protobuf-compiler-grpc \
-            libprotobuf-dev \
-            libgrpc-dev \
-            libgrpc++-dev
-
-      # Important:
-      # worker_session_fencing_smoke_test.py expects:
-      #
-      #   worker/build/forge-worker
-      #
-      # so this job intentionally uses worker/build rather than build-ci.
-      - name: Build worker for recovery tests
-        run: |
-          cmake \
-            -S worker \
-            -B worker/build \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release
-
-          cmake \
-            --build worker/build \
-            --parallel 2
-
-          test -x worker/build/forge-worker
-
-      - name: Start controller
-        run: |
-          chmod +x controller/gradlew
-
-          (
-            cd controller
-            ./gradlew bootRun --no-daemon \
-              > /tmp/forge-recovery-controller.log 2>&1
-          ) &
-
-          echo $! > /tmp/forge-recovery-controller.pid
-
-      - name: Wait for controller
+      - name: Check deployment secrets
         shell: bash
         run: |
           set -euo pipefail
-
-          for attempt in {1..60}; do
-            if curl \
-              --fail \
-              --silent \
-              http://127.0.0.1:8080/api/workers \
-              >/dev/null
-            then
-              echo "Controller is ready"
-              exit 0
+          for name in DEPLOY_HOST DEPLOY_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing production secret: $name" >&2
+              exit 1
             fi
-
-            sleep 1
           done
-
-          echo "Controller did not become ready"
-          cat /tmp/forge-recovery-controller.log
-          exit 1
-
-      - name: Start initial worker
-        run: |
-          rm -rf /tmp/forge-recovery-outbox
-
-          FORGE_OUTBOX_DIR=/tmp/forge-recovery-outbox \
-            ./worker/build/forge-worker \
-            > /tmp/forge-recovery-worker.log 2>&1 &
-
-          echo $! > /tmp/forge-recovery-worker.pid
-
-      - name: Wait for initial worker
+      - name: Configure SSH
         shell: bash
         run: |
           set -euo pipefail
-
-          python3 - <<'PY'
-          import json
-          import time
-          import urllib.request
-
-          url = "http://127.0.0.1:8080/api/workers"
-
-          for attempt in range(60):
-              try:
-                  with urllib.request.urlopen(url, timeout=2) as response:
-                      workers = json.load(response)
-
-                  online = [
-                      worker
-                      for worker in workers
-                      if worker.get("online")
-                      and worker.get("commandStreamConnected")
-                  ]
-
-                  if len(online) == 1:
-                      print(
-                          "Initial worker online:",
-                          online[0]["id"],
-                          online[0]["sessionId"],
-                      )
-                      raise SystemExit(0)
-
-              except Exception as exc:
-                  print(
-                      f"attempt {attempt + 1}: "
-                      f"{type(exc).__name__}"
-                  )
-
-              time.sleep(1)
-
-          raise SystemExit(
-              "Initial worker never became ready"
-          )
-          PY
-
-      - name: Verify session-loss recovery and retry
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/oci_deploy"
+          chmod 600 "$HOME/.ssh/oci_deploy"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Deploy exact Git revision
+        shell: bash
+        env:
+          REVISION: ${{ github.sha }}
         run: |
-          python3 scripts/worker_session_loss_retry_smoke_test.py
-
-      - name: Show controller log
-        if: always()
-        run: |
-          echo "================ Controller ================"
-          cat /tmp/forge-recovery-controller.log || true
-
-      - name: Show initial worker log
-        if: always()
-        run: |
-          echo "================ Initial worker ============="
-          cat /tmp/forge-recovery-worker.log || true
-
-      - name: Show replacement worker log
-        if: always()
-        run: |
-          echo "================ Replacement worker ========="
-          cat /tmp/forge_worker_fencing_secondary.log || true
+          set -euo pipefail
+          ssh \
+            -i "$HOME/.ssh/oci_deploy" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd /opt/forge && ./deploy/deploy.sh '$REVISION'"

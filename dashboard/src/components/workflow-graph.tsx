@@ -1,6 +1,13 @@
 "use client";
 
-import { memo, useId, useMemo, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 import {
   Background,
   BaseEdge,
@@ -14,6 +21,7 @@ import {
   Panel,
   Position,
   ReactFlow,
+  ReactFlowInstance,
 } from "@xyflow/react";
 import {
   Activity,
@@ -407,7 +415,7 @@ function formatTimestamp(
   );
 }
 
-function TaskNode({
+const TaskNode = memo(function TaskNode({
   data,
   selected,
 }: NodeProps<TaskFlowNode>) {
@@ -498,7 +506,21 @@ function TaskNode({
       />
     </div>
   );
-}
+}, (previous, next) => {
+  const previousData = previous.data;
+  const nextData = next.data;
+
+  return previous.selected === next.selected
+    && previousData.task.key === nextData.task.key
+    && previousData.task.taskId === nextData.task.taskId
+    && previousData.task.status === nextData.task.status
+    && previousData.summary.worker === nextData.summary.worker
+    && previousData.summary.attempts === nextData.summary.attempts
+    && previousData.summary.durationMs === nextData.summary.durationMs
+    && previousData.order === nextData.order
+    && previousData.accent === nextData.accent
+    && previousData.accentRgb === nextData.accentRgb;
+});
 
 const ExecutionEdge = memo(function ExecutionEdge({
   id,
@@ -702,6 +724,45 @@ function buildEdges(tasks: TaskTopology[]): ExecutionFlowEdge[] {
   return edges;
 }
 
+function nodeSignature(node: TaskFlowNode) {
+  return JSON.stringify({
+    position: node.position,
+    data: node.data,
+    selected: node.selected,
+  });
+}
+
+/*
+ * Keep React Flow's controlled collection structurally shared. A route
+ * refresh gives every task a new object identity; passing that whole array to
+ * React Flow causes it to reconcile every node and can restart SVG motion.
+ */
+function mergeNodes(
+  incoming: TaskFlowNode[],
+  current: TaskFlowNode[],
+) {
+  const currentById = new Map(
+    current.map((node) => [node.id, node]),
+  );
+  let changed = incoming.length !== current.length;
+
+  const merged = incoming.map((node) => {
+    const previous = currentById.get(node.id);
+
+    if (
+      previous &&
+      nodeSignature(previous) === nodeSignature(node)
+    ) {
+      return previous;
+    }
+
+    changed = true;
+    return node;
+  });
+
+  return changed ? merged : current;
+}
+
 function AttemptPanel({
   task,
   events,
@@ -848,7 +909,7 @@ function AttemptPanel({
   );
 }
 
-export function WorkflowGraph({
+function WorkflowGraphView({
   tasks,
   events,
 }: WorkflowGraphProps) {
@@ -906,7 +967,7 @@ export function WorkflowGraph({
         selectedTaskKey,
     ) ?? null;
 
-  const nodes = useMemo(
+  const calculatedNodes = useMemo(
     () =>
       buildNodes(
         stableTasks,
@@ -920,12 +981,36 @@ export function WorkflowGraph({
     ],
   );
 
+  const [nodes, setNodes] = useState(
+    calculatedNodes,
+  );
+
+  useEffect(() => {
+    /*
+     * Apply the diff on the next frame. Besides keeping refresh rendering
+     * inexpensive, this prevents a parent route refresh from synchronously
+     * replacing the React Flow collection before its SVG animation frame.
+     */
+    const frame = window.requestAnimationFrame(() => {
+      setNodes((current) =>
+        mergeNodes(
+          calculatedNodes,
+          current,
+        ),
+      );
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [calculatedNodes]);
+
   const edges = useMemo(
     () => buildEdges(stableTopology),
     [stableTopology],
   );
 
-  const liveTasks = tasks.filter(
+  const liveTaskCount = tasks.filter(
     (task) =>
       [
         "RUNNING",
@@ -936,7 +1021,28 @@ export function WorkflowGraph({
   const completedTasks = tasks.filter(
     (task) =>
       task.status === "SUCCEEDED",
-  ).length;
+    ).length;
+
+  const handleInit = useCallback(
+    (instance: ReactFlowInstance<TaskFlowNode, ExecutionFlowEdge>) => {
+      instance.fitView({
+        padding: 0.2,
+      });
+    },
+    [],
+  );
+
+  const handlePaneClick = useCallback(
+    () => setSelectedTaskKey(null),
+    [],
+  );
+
+  const handleNodeClick = useCallback(
+    (_event: React.MouseEvent, node: TaskFlowNode) => {
+      setSelectedTaskKey(node.id);
+    },
+    [],
+  );
 
   return (
     <div className="execution-graph relative h-[560px] w-full">
@@ -948,27 +1054,15 @@ export function WorkflowGraph({
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        fitView
-        fitViewOptions={{
-          padding: 0.2,
-        }}
+        onInit={handleInit}
         minZoom={0.3}
         maxZoom={1.5}
         colorMode="dark"
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable
-        onPaneClick={() =>
-          setSelectedTaskKey(null)
-        }
-        onNodeClick={(
-          _event,
-          node,
-        ) => {
-          setSelectedTaskKey(
-            node.id,
-          );
-        }}
+        onPaneClick={handlePaneClick}
+        onNodeClick={handleNodeClick}
       >
         <Background
           gap={24}
@@ -986,7 +1080,7 @@ export function WorkflowGraph({
           </div>
           <div className="execution-hud__metrics">
             <span>
-              <strong>{liveTasks}</strong>
+              <strong>{liveTaskCount}</strong>
               active
             </span>
             <span>
@@ -1038,3 +1132,15 @@ export function WorkflowGraph({
     </div>
   );
 }
+
+/*
+ * router.refresh() always passes new array identities. Skipping the client
+ * component render when their contents are unchanged leaves React Flow and
+ * its SMIL edge travellers completely untouched between real state changes.
+ */
+export const WorkflowGraph = memo(
+  WorkflowGraphView,
+  (previous, next) =>
+    JSON.stringify(previous.tasks) === JSON.stringify(next.tasks)
+    && JSON.stringify(previous.events) === JSON.stringify(next.events),
+);

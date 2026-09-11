@@ -22,3 +22,21 @@ worker/build/
 # Python tooling
 __pycache__/
 *.py[cod]
+.env
+.env.*
+!.env.example
+
+# Generated/local video data. Keep only the small licensed deployment excerpt
+# and its documentation in Git; benchmark runs and source footage are local.
+demo/video/*
+!demo/video/DASHBOARD-DEMO.md
+!demo/video/deploy/
+demo/video/deploy/*
+!demo/video/deploy/tears-of-steel-excerpt.mp4
+
+# Generated browser verification evidence
+demo/video/docker-dashboard-evidence/
+
+# Deployment host state
+.deploy.lock
+.deployed-revision

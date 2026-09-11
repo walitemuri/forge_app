@@ -1,0 +1,19 @@
+services:
+  chaos-agent:
+    build:
+      context: .
+      dockerfile: chaos-agent/Dockerfile
+
+    container_name: forge-chaos-agent
+    restart: unless-stopped
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    networks:
+      - forge
+
+  dashboard:
+    environment:
+      FORGE_CHAOS_ENABLED: "true"
+      FORGE_CHAOS_URL: http://chaos-agent:8090

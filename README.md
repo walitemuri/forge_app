@@ -17,7 +17,7 @@ Forge is a from-scratch execution engine for running shell commands on remote wo
 </div>
 
 > [!IMPORTANT]
-> Forge executes arbitrary processes and currently has no authentication or transport encryption. It is a systems-engineering project intended for trusted development environments, not an internet-facing production deployment. See [Security](SECURITY.md).
+> The Forge engine executes arbitrary processes and its internal REST/gRPC APIs are trusted-network interfaces. The [public demo configuration](docs/deployment.md) exposes only the dashboard and ten fixed, bounded workflow templates behind HTTPS. See [Security](SECURITY.md).
 
 ## Why this project is interesting
 
@@ -42,80 +42,25 @@ The REST API is the user-facing control surface. The controller persists logical
 
 ## Quick start
 
-### Prerequisites
-
-- Java 21
-- Docker with Compose support
-- CMake 3.20+ and a C++20 compiler
-- Protobuf and gRPC C++ development packages
-- Linux or macOS for the worker (`fork`, `execvp`, process groups, and POSIX signals are used)
-
-On Ubuntu/Debian, the worker dependencies are typically available as:
+Docker with Compose is enough to run the complete demo:
 
 ```bash
-sudo apt-get install build-essential cmake pkg-config \
-  protobuf-compiler protobuf-compiler-grpc libprotobuf-dev libgrpc++-dev
+docker compose up -d --build
 ```
 
-### 1. Start PostgreSQL
+Open [Workflow Templates](http://localhost:3000/templates) to launch any of ten
+workflows. Start with parallel processing, retry recovery, or distributed video
+processing. Click DAG nodes to inspect attempts and worker assignments. Templates
+that intentionally fail explain their expected results before launch.
 
-```bash
-docker compose up -d
-```
+The images include the Java/C++ build tools, verification source, and a compact
+30-second Tears of Steel footage excerpt. No full film download, host compiler, or source bind mount
+is required. PostgreSQL, worker outboxes, and video artifacts use persistent
+Docker volumes.
 
-Compose exposes PostgreSQL on `localhost:5433` and Flyway applies the schema when the controller starts.
-
-### 2. Start the controller
-
-```bash
-cd controller
-./gradlew bootRun
-```
-
-The REST API listens on `http://localhost:8080`; the worker control plane listens on `localhost:50051`.
-
-### 3. Build and start a worker
-
-From another terminal at the repository root:
-
-```bash
-cmake -S worker -B worker/build
-cmake --build worker/build --parallel
-./worker/build/forge-worker --controller=localhost:50051
-```
-
-### 4. Submit a workflow
-
-```bash
-curl -sS -X POST http://localhost:8080/api/workflows \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "demo-pipeline",
-    "tasks": [
-      {
-        "key": "prepare",
-        "command": "/bin/sh",
-        "arguments": ["-c", "printf prepared"],
-        "maxAttempts": 2,
-        "timeoutSeconds": 30
-      },
-      {
-        "key": "verify",
-        "command": "/bin/sh",
-        "arguments": ["-c", "printf verified"],
-        "dependsOn": ["prepare"]
-      }
-    ]
-  }'
-```
-
-The response contains the workflow ID and generated task IDs. Inspect progress with:
-
-```bash
-curl -sS http://localhost:8080/api/workflows/<workflow-id>
-curl -sS http://localhost:8080/api/workflows/<workflow-id>/events
-curl -sS http://localhost:8080/api/workers
-```
+For an interactive recruiter-facing deployment, follow the [public deployment
+guide](docs/deployment.md), which adds HTTPS, private backend ports, launch budgets,
+and resource limits. For native development, see [Development](docs/development.md).
 
 ## Core model
 
@@ -140,11 +85,12 @@ forge_app/
 ├── proto/forge.proto           Shared wire contract
 ├── scripts/                    End-to-end and failure-injection smoke tests
 ├── docs/                       Architecture, API, development, and operations
-└── docker-compose.yml          Local PostgreSQL 17 service
+└── docker-compose.yml          Complete local Docker stack
 ```
 
 ## Documentation
 
+- [Public demo deployment](docs/deployment.md) — Docker setup, HTTPS, template outcomes, and operating limits
 - [Architecture](docs/architecture.md) — components, execution flow, state machine, recovery design, and data model
 - [API reference](docs/api.md) — REST resources, payloads, lifecycle values, and gRPC contract
 - [Development guide](docs/development.md) — prerequisites, builds, tests, migrations, protocol changes, and repository conventions

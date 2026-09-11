@@ -7,13 +7,161 @@ services:
     environment:
       POSTGRES_DB: forge
       POSTGRES_USER: forge
-      POSTGRES_PASSWORD: forge
-
-    ports:
-      - "5433:5432"
+      POSTGRES_PASSWORD: ${FORGE_DB_PASSWORD:-forge}
 
     volumes:
       - forge-postgres-data:/var/lib/postgresql/data
 
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forge -d forge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+    networks:
+      - forge
+
+
+  controller:
+    build:
+      context: .
+      dockerfile: controller/Dockerfile
+
+    container_name: forge-controller
+    restart: unless-stopped
+
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/forge
+      SPRING_DATASOURCE_USERNAME: forge
+      SPRING_DATASOURCE_PASSWORD: ${FORGE_DB_PASSWORD:-forge}
+      SERVER_PORT: 8080
+      FORGE_GRPC_PORT: 50051
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:50051:50051"
+
+    networks:
+      - forge
+
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+
+    container_name: forge-dashboard
+    restart: unless-stopped
+
+    environment:
+      FORGE_API_URL: http://controller:8080
+      FORGE_PUBLIC_DEMO: "false"
+      FORGE_CHAOS_ENABLED: "false"
+      FORGE_DEMO_LAUNCH_ENABLED: ${FORGE_DEMO_LAUNCH_ENABLED:-true}
+
+    volumes:
+      - forge-demo-state:/workspace/shared:ro
+
+    depends_on:
+      - controller
+
+    ports:
+      - "127.0.0.1:3000:3000"
+
+    networks:
+      - forge
+
+
+  worker-a:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+
+    container_name: forge-worker-a
+    restart: unless-stopped
+
+    environment:
+      FORGE_WORKER_ID: forge-worker-a
+      FORGE_OUTBOX_DIR: /var/lib/forge/outbox
+
+    volumes:
+      - forge-worker-a-outbox:/var/lib/forge/outbox
+      - forge-demo-state:/workspace/shared
+
+    command:
+      - "--controller=controller:50051"
+
+    depends_on:
+      - controller
+
+    networks:
+      - forge
+
+
+  worker-b:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+
+    container_name: forge-worker-b
+    restart: unless-stopped
+
+    environment:
+      FORGE_WORKER_ID: forge-worker-b
+      FORGE_OUTBOX_DIR: /var/lib/forge/outbox
+
+    volumes:
+      - forge-worker-b-outbox:/var/lib/forge/outbox
+      - forge-demo-state:/workspace/shared
+
+    command:
+      - "--controller=controller:50051"
+
+    depends_on:
+      - controller
+
+    networks:
+      - forge
+
+
+  worker-c:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+
+    container_name: forge-worker-c
+    restart: unless-stopped
+
+    environment:
+      FORGE_WORKER_ID: forge-worker-c
+      FORGE_OUTBOX_DIR: /var/lib/forge/outbox
+
+    volumes:
+      - forge-worker-c-outbox:/var/lib/forge/outbox
+      - forge-demo-state:/workspace/shared
+
+    command:
+      - "--controller=controller:50051"
+
+    depends_on:
+      - controller
+
+    networks:
+      - forge
+
+
 volumes:
   forge-postgres-data:
+  forge-worker-a-outbox:
+  forge-worker-b-outbox:
+  forge-worker-c-outbox:
+  forge-demo-state:
+
+
+networks:
+  forge:
+    driver: bridge

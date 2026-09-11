@@ -1,0 +1,20 @@
+{$FORGE_DOMAIN} {
+    encode zstd gzip
+    request_body {
+        max_size 16KB
+    }
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        X-Frame-Options DENY
+        -Server
+    }
+    # Defense in depth: the public host never exposes infrastructure controls.
+    @private path /reliability /reliability/* /api/forge/reliability/* /api/tasks* /api/workflows* /api/workers*
+    respond @private 404
+    reverse_proxy dashboard:3000 {
+        transport http {
+            response_header_timeout 60s
+        }
+    }
+}

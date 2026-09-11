@@ -2,6 +2,7 @@
 
 #include <cerrno>
 #include <chrono>
+#include <cstddef>
 #include <csignal>
 #include <fcntl.h>
 #include <poll.h>
@@ -36,10 +37,74 @@ void setNonBlocking(
 }
 
 
+constexpr std::size_t
+    MAX_CAPTURED_STREAM_BYTES =
+        1024 * 1024;
+
+
+void appendBounded(
+        std::string& output,
+        const char* data,
+        std::size_t size,
+        bool& truncated) {
+
+    /*
+     * Keep the most recent output.
+     *
+     * Renderer/compiler failures are generally
+     * explained near the end of the stream, so
+     * retaining the tail is more useful than
+     * retaining only the beginning.
+     */
+    if (size >= MAX_CAPTURED_STREAM_BYTES) {
+
+        output.assign(
+            data
+                + size
+                - MAX_CAPTURED_STREAM_BYTES,
+            MAX_CAPTURED_STREAM_BYTES
+        );
+
+        truncated = true;
+
+        return;
+    }
+
+
+    const std::size_t required =
+        output.size() + size;
+
+
+    if (required
+            > MAX_CAPTURED_STREAM_BYTES) {
+
+        const std::size_t overflow =
+            required
+            - MAX_CAPTURED_STREAM_BYTES;
+
+
+        output.erase(
+            0,
+            overflow
+        );
+
+
+        truncated = true;
+    }
+
+
+    output.append(
+        data,
+        size
+    );
+}
+
+
 void readAvailable(
         int fd,
         std::string& output,
-        bool& open) {
+        bool& open,
+        bool& truncated) {
 
     char buffer[4096];
 
@@ -56,11 +121,13 @@ void readAvailable(
 
         if (bytesRead > 0) {
 
-            output.append(
+            appendBounded(
+                output,
                 buffer,
-                static_cast<size_t>(
+                static_cast<std::size_t>(
                     bytesRead
-                )
+                ),
+                truncated
             );
         }
         else if (bytesRead == 0) {
@@ -311,6 +378,14 @@ ProcessResult executeProcess(
     bool stderrOpen =
         true;
 
+
+    bool stdoutTruncated =
+        false;
+
+    bool stderrTruncated =
+        false;
+
+
     bool timedOut =
         false;
 
@@ -512,7 +587,8 @@ ProcessResult executeProcess(
             readAvailable(
                 stdoutPipe[0],
                 stdoutOutput,
-                stdoutOpen
+                stdoutOpen,
+                stdoutTruncated
             );
         }
 
@@ -526,9 +602,30 @@ ProcessResult executeProcess(
             readAvailable(
                 stderrPipe[0],
                 stderrOutput,
-                stderrOpen
+                stderrOpen,
+                stderrTruncated
             );
         }
+    }
+
+
+    if (stdoutTruncated) {
+
+        stdoutOutput.insert(
+            0,
+            "[Forge: stdout truncated; "
+            "showing last 1 MiB]\n"
+        );
+    }
+
+
+    if (stderrTruncated) {
+
+        stderrOutput.insert(
+            0,
+            "[Forge: stderr truncated; "
+            "showing last 1 MiB]\n"
+        );
     }
 
 

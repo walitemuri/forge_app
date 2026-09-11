@@ -2,18 +2,18 @@
 
 ## Current trust model
 
-Forge is a distributed-systems development project, not a hardened multi-tenant service. Run it only on trusted networks with trusted API clients, controller operators, database administrators, and worker hosts.
+Forge is a distributed-systems development project, not a hardened multi-tenant service. Keep the engine APIs on trusted networks with trusted API clients, controller operators, database administrators, and worker hosts. The public demo serves a restricted dashboard over HTTPS; visitors can submit only predefined templates.
 
 The current implementation intentionally leaves several production controls out of scope:
 
 - REST endpoints have no authentication or authorization.
 - gRPC uses insecure channel credentials and does not authenticate workers.
 - Submitted commands execute with the worker process account.
-- The worker uses host process execution, not containers or a sandbox.
-- Command output is persisted without size limits or secret filtering.
+- The worker executes child processes with its own privileges. Public deployment places each worker in a resource-limited Docker container, but does not create a separate sandbox per task.
+- Worker stdout and stderr capture is capped at 1 MiB per stream; output is not filtered for secrets.
 - Local Compose credentials are checked into source for development convenience.
 
-Do not bind the services to an untrusted network, run the worker as root, reuse the development database password, or process untrusted commands.
+Do not publish the internal engine services, run native workers as host root, reuse the development database password publicly, or process untrusted commands. See [public deployment](docs/deployment.md) for the curated demo boundary, single-dashboard admission limits, and private infrastructure controls.
 
 ## Safe local use
 
