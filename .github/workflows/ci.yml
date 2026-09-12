@@ -153,4 +153,9 @@ jobs:
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "cd /opt/forge && ./deploy/deploy-azure.sh '$REVISION'"
+            "cd /opt/forge &&
+             git fetch --prune origin main &&
+             git cat-file -e '${REVISION}^{commit}' &&
+             git merge-base --is-ancestor '$REVISION' origin/main &&
+             git checkout --detach '$REVISION' &&
+             ./deploy/deploy-azure.sh '$REVISION'"
