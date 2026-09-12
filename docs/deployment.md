@@ -130,15 +130,12 @@ restricted to `main`, then configure these environment secrets:
 | `AZURE_SSH_PRIVATE_KEY` | Dedicated deployment private key, including header and footer |
 | `AZURE_SSH_KNOWN_HOSTS` | Verified output of `ssh-keyscan -H YOUR_HOSTNAME` |
 
-Set repository variables `FORGE_URL=https://YOUR_HOSTNAME` and
-`AZURE_DEPLOY_ENABLED=true`. A GitHub-hosted runner must also be allowed through
-the NSG on TCP 22; because its addresses change, prefer a self-hosted runner with
-a fixed egress IP or keep automated deployment disabled and deploy manually.
-Every push still runs CI when deployment is disabled. When enabled, the job
-deploys the exact tested commit without deleting persistent Docker volumes.
-You can also run the workflow manually on `main` and leave its **Deploy the
-tested revision to Azure** input enabled; manual deployment does not depend on
-the repository toggle.
+Set the repository variable `FORGE_URL=https://YOUR_HOSTNAME`. A GitHub-hosted
+runner must also be allowed through the NSG on TCP 22; because its addresses
+change, prefer a self-hosted runner with a fixed egress IP when possible. Every
+push to `main` runs CI and, after all checks pass, deploys the exact tested commit
+without deleting persistent Docker volumes. A workflow dispatched manually from
+`main` follows the same test-then-deploy path.
 
 ### Manual deployment
 
