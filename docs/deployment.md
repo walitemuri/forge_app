@@ -44,57 +44,98 @@ all backend port publications. Plan memory for the configured container ceilings
 and three workers share the host CPU; this demonstrates distribution across
 worker processes, not across three physical servers.
 
-### Oracle Cloud Free Tier and GitHub Actions
+### Azure for Students
 
-Use an Always Free `VM.Standard.A1.Flex` instance with the full free allocation
-(currently 2 OCPUs and 12 GB RAM), Ubuntu 24.04, a public IPv4 address, and at
-least a 50 GB boot volume. The 1 GB `VM.Standard.E2.1.Micro` shape cannot run
-this stack. In the OCI subnet security list or network security group, allow
-inbound TCP 80 and 443 from the internet. Keep 3000, 8080, 50051, and 5432
-closed. A GitHub-hosted runner also needs to reach TCP 22. GitHub's hosted-runner
-addresses change, so the simple setup exposes port 22 while enforcing key-only
-SSH; a static-IP or self-hosted runner lets you restrict that rule further.
+The budget deployment is one Ubuntu 24.04 VM in North Central US, one of the
+regions currently allowed by this Azure for Students subscription. The default
+Bicep size is `Standard_B2als_v2` (2 vCPU, 4 GiB RAM) with a 64 GiB Standard SSD.
+The Azure Compose overlay lowers the container ceilings and the bootstrap adds
+4 GiB of swap. This is appropriate for a low-traffic portfolio demo; builds and
+video jobs will be slower when the burstable VM is short on CPU credits. If the
+heavy templates are unreliable, resize to `Standard_B2as_v2` (8 GiB) and keep
+using the same disk and configuration.
 
-After creating the VM and pointing the domain's A record at its public IP, copy
-`deploy/bootstrap-oracle-ubuntu.sh` to the VM and run it as the normal `ubuntu`
-user. The script installs Docker from Docker's official Ubuntu repository,
-clones this repository into `/opt/forge`, and creates a protected `.env` template.
-Edit that file before the first deployment, then sign out and back in:
+At North Central US retail rates checked 2026-09-11, the selected Linux VM is
+$0.0376/hour (about $27.45 per 730-hour month), the E6 Standard SSD is
+$4.80/month, and the static IP is $0.006/hour (about $4.38/month). Budget about
+$37 USD/month before disk operations, outbound traffic, and taxes. Confirm the
+estimate in the Azure pricing calculator because rates and student entitlements
+can change.
+
+The template creates a resource group, static public IP with a free
+`northcentralus.cloudapp.azure.com` hostname, network security group, virtual
+network, and VM. Only 80 and 443 are public. SSH is key-only and restricted to
+the CIDR supplied at deployment; ports 3000, 8080, 50051, and 5432 remain closed.
+
+Install the Azure CLI, sign in to the Azure for Students subscription, and create
+a dedicated key if needed. Deploy from the repository root:
 
 ```bash
-bash bootstrap-oracle-ubuntu.sh https://github.com/walitemuri/forge_app.git
-sudoedit /opt/forge/.env
+az login
+az account set --subscription "Azure for Students"
+ssh-keygen -t ed25519 -f "$HOME/.ssh/forge_azure" -C forge-azure
+az deployment sub create \
+  --name forge-demo \
+  --location northcentralus \
+  --template-file deploy/azure/main.bicep \
+  --parameters \
+    sshPublicKey="$(< "$HOME/.ssh/forge_azure.pub")" \
+    allowedSshCidr="$(curl -fsSL https://api.ipify.org)/32"
+FORGE_HOST="$(az deployment sub show \
+  --name forge-demo \
+  --query properties.outputs.hostname.value \
+  --output tsv)"
+```
+
+The automatically assigned hostname works with Caddy HTTPS, so a purchased
+domain is optional. Copy and run the bootstrap, then set that hostname and a
+new database password in `/opt/forge/.env`:
+
+```bash
+scp -i "$HOME/.ssh/forge_azure" \
+  deploy/bootstrap-azure-ubuntu.sh "azureuser@$FORGE_HOST:"
+ssh -i "$HOME/.ssh/forge_azure" "azureuser@$FORGE_HOST"
+bash bootstrap-azure-ubuntu.sh https://github.com/walitemuri/forge_app.git
+nano /opt/forge/.env
 exit
 ```
 
-Create a dedicated SSH key for GitHub Actions and append its public key to the
-VM user's `~/.ssh/authorized_keys`. In the GitHub repository, create a
-`production` environment restricted to `main`, optionally require approval, and
-add these environment secrets:
+Sign in again so the Docker group membership applies, then perform the first
+deployment. The serial image build can take 20–40 minutes on the burstable VM:
+
+```bash
+ssh -i "$HOME/.ssh/forge_azure" "azureuser@$FORGE_HOST"
+cd /opt/forge
+./deploy/deploy-azure.sh "$(git rev-parse HEAD)"
+```
+
+Open `https://YOUR_HOSTNAME/templates`. Caddy obtains the certificate after the
+hostname resolves and ports 80/443 are reachable.
+
+Set a Cost Management budget and alert before leaving the VM running. Deallocating
+the VM stops compute charges; the retained disk and static public IP remain billed:
+
+```bash
+az vm deallocate --resource-group forge-demo-rg --name forge-demo-vm
+az vm start --resource-group forge-demo-rg --name forge-demo-vm
+```
+
+For optional GitHub Actions deployment, create a `production` environment
+restricted to `main`, then configure these environment secrets:
 
 | Secret | Value |
 | --- | --- |
-| `OCI_HOST` | VM public IPv4 address or DNS name |
-| `OCI_SSH_USER` | `ubuntu` |
-| `OCI_SSH_PRIVATE_KEY` | Dedicated deployment private key, including header and footer |
-| `OCI_SSH_KNOWN_HOSTS` | Output of `ssh-keyscan -H YOUR_VM_IP` verified against the VM host-key fingerprint |
+| `AZURE_HOST` | VM hostname from the deployment output |
+| `AZURE_SSH_USER` | `azureuser` |
+| `AZURE_SSH_PRIVATE_KEY` | Dedicated deployment private key, including header and footer |
+| `AZURE_SSH_KNOWN_HOSTS` | Verified output of `ssh-keyscan -H YOUR_HOSTNAME` |
 
-Set the environment variables `FORGE_URL` to `https://YOUR_DOMAIN` and
-`OCI_DEPLOY_ENABLED` to `true` after the VM and all four secrets are ready. Every
-push to `main` runs controller, worker, dashboard, and Compose checks. Until that
-flag is set, the deploy job is safely skipped. Once enabled, only after all checks
-pass does the production job connect over SSH, fetch the exact triggering Git
-commit, rebuild the images, recreate containers without deleting volumes, and
-verify the dashboard, controller, and an online worker. Deployments are serialized
-and fail if anyone has edited tracked files directly on the server.
-
-The first ARM build can take a while. You can start it manually after bootstrap
-or let the first successful GitHub Actions run do it:
-
-```bash
-cd /opt/forge
-./deploy/deploy.sh "$(git rev-parse HEAD)"
-```
+Set repository variables `FORGE_URL=https://YOUR_HOSTNAME` and
+`AZURE_DEPLOY_ENABLED=true`. A GitHub-hosted runner must also be allowed through
+the NSG on TCP 22; because its addresses change, prefer a self-hosted runner with
+a fixed egress IP or keep automated deployment disabled and deploy manually.
+Every push still runs CI when deployment is disabled. When enabled, the job
+deploys the exact tested commit without deleting persistent Docker volumes.
 
 ### Manual deployment
 
@@ -104,12 +145,13 @@ cd /opt/forge
    starting PostgreSQL; changing the variable does not rotate an existing database.
 2. Point the domain's A record (and AAAA record, if used) to the server. Allow
    incoming TCP ports 80 and 443, plus your restricted SSH access.
-3. Start the public configuration:
+3. Start the public configuration. On the budget Azure VM, include the Azure
+   overlay as shown:
 
    ```bash
-   docker compose -f docker-compose.yml -f docker-compose.public.yml config --quiet
-   docker compose -f docker-compose.yml -f docker-compose.public.yml up -d --build
-   docker compose -f docker-compose.yml -f docker-compose.public.yml ps
+   docker compose -f docker-compose.yml -f docker-compose.public.yml -f docker-compose.azure.yml config --quiet
+   docker compose -f docker-compose.yml -f docker-compose.public.yml -f docker-compose.azure.yml up -d --build
+   docker compose -f docker-compose.yml -f docker-compose.public.yml -f docker-compose.azure.yml ps
    ```
 
 4. Open `https://YOUR_DOMAIN/templates`, launch Parallel Processing, then Failure
@@ -158,7 +200,8 @@ worker engine remains an arbitrary process executor internally; keep its REST
 and gRPC endpoints on the private Compose network and accept only trusted code.
 
 To pause launches, set `FORGE_DEMO_LAUNCH_ENABLED=false` in `.env`, then recreate
-the dashboard with the same two Compose files. This does not cancel active work.
+the dashboard with the same Compose files (including the Azure overlay when used).
+This does not cancel active work.
 To resume, set it to `true`. Check disk space periodically: PostgreSQL, artifacts,
 and outboxes are persistent, and the archive limit intentionally requires an
 operator decision instead of automatically deleting execution evidence. Export
@@ -169,9 +212,11 @@ outboxes. There is no automatic retention deletion job.
 docker compose -f docker-compose.yml -f docker-compose.public.yml logs --tail=100 dashboard controller worker-a
 ```
 
-Always use both Compose files for public updates. Rebuild after code changes and
-keep the database, shared artifact volume, and worker outboxes. Do not use
-`down -v` unless you explicitly intend to delete the demo's durable state.
+Always use the base and public Compose files, plus the Azure overlay on the
+budget VM, for updates. `deploy/deploy-azure.sh` selects all three automatically.
+Rebuild after code changes and keep the database, shared artifact volume, and
+worker outboxes. Do not use `down -v` unless you explicitly intend to delete the
+demo's durable state.
 
 ## Template outcomes
 

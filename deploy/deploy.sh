@@ -6,6 +6,14 @@ deploy_dir="${FORGE_DEPLOY_DIR:-/opt/forge}"
 compose_files=(-f docker-compose.yml -f docker-compose.public.yml)
 expected_services=(caddy controller dashboard postgres worker-a worker-b worker-c)
 
+if [[ -n "${FORGE_COMPOSE_OVERLAY:-}" ]]; then
+  if [[ "$FORGE_COMPOSE_OVERLAY" != docker-compose.azure.yml ]]; then
+    echo "Unsupported deployment overlay: $FORGE_COMPOSE_OVERLAY" >&2
+    exit 2
+  fi
+  compose_files+=(-f "$FORGE_COMPOSE_OVERLAY")
+fi
+
 if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Usage: $0 <40-character-git-revision>" >&2
   exit 2
@@ -20,7 +28,7 @@ if ! flock -n 9; then
 fi
 
 if [[ ! -f .env ]]; then
-  echo "$deploy_dir/.env is missing; run the Oracle bootstrap first." >&2
+  echo "$deploy_dir/.env is missing; run the provider bootstrap first." >&2
   exit 1
 fi
 
@@ -42,8 +50,8 @@ git checkout --detach "$revision"
 
 docker compose "${compose_files[@]}" config --quiet
 
-# The Always Free A1 host currently has two OCPUs. Serializing Compose builds
-# avoids several compiler-heavy images exhausting host resources at once.
+# Serializing Compose builds avoids several compiler-heavy images exhausting a
+# small deployment host at once.
 export COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT:-1}"
 docker compose "${compose_files[@]}" build --pull
 docker compose "${compose_files[@]}" up -d --remove-orphans

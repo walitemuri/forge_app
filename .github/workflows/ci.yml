@@ -94,15 +94,20 @@ jobs:
           FORGE_DOMAIN: forge.example.com
           FORGE_DB_PASSWORD: ci-only-placeholder
         run: docker compose -f docker-compose.yml -f docker-compose.public.yml config --quiet
+      - name: Validate Azure Compose configuration
+        env:
+          FORGE_DOMAIN: forge.example.com
+          FORGE_DB_PASSWORD: ci-only-placeholder
+        run: docker compose -f docker-compose.yml -f docker-compose.public.yml -f docker-compose.azure.yml config --quiet
       - name: Validate deployment scripts
-        run: bash -n deploy/bootstrap-oracle-ubuntu.sh deploy/deploy.sh
+        run: bash -n deploy/bootstrap-oracle-ubuntu.sh deploy/bootstrap-azure-ubuntu.sh deploy/deploy.sh deploy/deploy-azure.sh
 
   deploy:
-    name: Deploy to Oracle Cloud
+    name: Deploy to Azure
     if: >-
       github.event_name != 'pull_request' &&
       github.ref == 'refs/heads/main' &&
-      vars.OCI_DEPLOY_ENABLED == 'true'
+      vars.AZURE_DEPLOY_ENABLED == 'true'
     needs: [controller, worker, dashboard, deployment-config]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -113,10 +118,10 @@ jobs:
       group: forge-production
       cancel-in-progress: false
     env:
-      DEPLOY_HOST: ${{ secrets.OCI_HOST }}
-      DEPLOY_USER: ${{ secrets.OCI_SSH_USER }}
-      SSH_PRIVATE_KEY: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
-      SSH_KNOWN_HOSTS: ${{ secrets.OCI_SSH_KNOWN_HOSTS }}
+      DEPLOY_HOST: ${{ secrets.AZURE_HOST }}
+      DEPLOY_USER: ${{ secrets.AZURE_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
+      SSH_KNOWN_HOSTS: ${{ secrets.AZURE_SSH_KNOWN_HOSTS }}
     steps:
       - name: Check deployment secrets
         shell: bash
@@ -133,8 +138,8 @@ jobs:
         run: |
           set -euo pipefail
           install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/oci_deploy"
-          chmod 600 "$HOME/.ssh/oci_deploy"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/azure_deploy"
+          chmod 600 "$HOME/.ssh/azure_deploy"
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
       - name: Deploy exact Git revision
@@ -144,9 +149,9 @@ jobs:
         run: |
           set -euo pipefail
           ssh \
-            -i "$HOME/.ssh/oci_deploy" \
+            -i "$HOME/.ssh/azure_deploy" \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "cd /opt/forge && ./deploy/deploy.sh '$REVISION'"
+            "cd /opt/forge && ./deploy/deploy-azure.sh '$REVISION'"

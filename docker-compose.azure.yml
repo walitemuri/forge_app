@@ -1,0 +1,30 @@
+# Lean limits for the Azure student deployment.
+# Apply after docker-compose.public.yml on a Standard_B2als_v2 (2 vCPU, 4 GiB)
+# host with swap enabled by deploy/bootstrap-azure-ubuntu.sh.
+services:
+  postgres:
+    mem_limit: 384m
+    memswap_limit: 768m
+
+  controller:
+    environment:
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=60
+    mem_limit: 768m
+    memswap_limit: 1280m
+    cpus: 0.75
+
+  dashboard:
+    mem_limit: 384m
+    memswap_limit: 640m
+    cpus: 0.50
+
+  worker-a: &azure-worker-limits
+    mem_limit: 1280m
+    memswap_limit: 2g
+    cpus: 0.75
+  worker-b: *azure-worker-limits
+  worker-c: *azure-worker-limits
+
+  caddy:
+    mem_limit: 128m
+    memswap_limit: 256m
