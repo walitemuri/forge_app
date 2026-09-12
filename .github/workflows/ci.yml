@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy the tested revision to Azure
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -105,9 +111,9 @@ jobs:
   deploy:
     name: Deploy to Azure
     if: >-
-      github.event_name != 'pull_request' &&
       github.ref == 'refs/heads/main' &&
-      vars.AZURE_DEPLOY_ENABLED == 'true'
+      ((github.event_name == 'workflow_dispatch' && inputs.deploy) ||
+       (github.event_name == 'push' && vars.AZURE_DEPLOY_ENABLED == 'true'))
     needs: [controller, worker, dashboard, deployment-config]
     runs-on: ubuntu-24.04
     timeout-minutes: 60

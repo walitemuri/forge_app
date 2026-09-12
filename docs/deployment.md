@@ -136,6 +136,9 @@ the NSG on TCP 22; because its addresses change, prefer a self-hosted runner wit
 a fixed egress IP or keep automated deployment disabled and deploy manually.
 Every push still runs CI when deployment is disabled. When enabled, the job
 deploys the exact tested commit without deleting persistent Docker volumes.
+You can also run the workflow manually on `main` and leave its **Deploy the
+tested revision to Azure** input enabled; manual deployment does not depend on
+the repository toggle.
 
 ### Manual deployment
 
